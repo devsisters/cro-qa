@@ -1,0 +1,46 @@
+{
+  "suite": "my-test",
+  "kind": "rewind",
+  "cases": [
+    {
+      "id": "RW-01",
+      "title": "",
+      "map": "arenaChampions0001",
+      "plays": 2,
+      "seed": 1,
+      "cards": {
+        "cookie1": "random",
+        "cookie2": "random",
+        "pet": "random",
+        "treasures": [
+          "random",
+          "random",
+          "random"
+        ]
+      },
+      "target": "latest",
+      "triggers": [
+        {
+          "type": "interval",
+          "delaySec": 10,
+          "count": 1
+        },
+        {
+          "type": "interval",
+          "delaySec": 20,
+          "count": 1
+        }
+      ],
+      "input": {
+        "mode": "random",
+        "seed": 0,
+        "actionsPerSec": 0.8,
+        "slideRatio": 0.3,
+        "doubleJumpRatio": 0.4,
+        "abilityEverySec": 8,
+        "rescue": true
+      },
+      "timeoutSec": 300
+    }
+  ]
+}
