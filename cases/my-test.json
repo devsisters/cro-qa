@@ -7,7 +7,6 @@
       "title": "",
       "map": "arenaChampions0001",
       "plays": 2,
-      "seed": 1,
       "cards": {
         "cookie1": "random",
         "cookie2": "random",
@@ -32,15 +31,16 @@
         }
       ],
       "input": {
+        "rescue": true,
         "mode": "random",
-        "seed": 0,
         "actionsPerSec": 0.8,
         "slideRatio": 0.3,
         "doubleJumpRatio": 0.4,
         "abilityEverySec": 8,
-        "rescue": true
+        "seed": 0
       },
-      "timeoutSec": 300
+      "timeoutSec": 300,
+      "seed": 1
     }
   ]
 }
