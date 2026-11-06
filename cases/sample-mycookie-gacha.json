@@ -1,0 +1,136 @@
+{
+ "suite": "sample-mycookie-gacha",
+ "sheet": "(샘플 — 실제 시트 없음. Figma 2610_마이쿠키뽑기 플로우를 시트 형식으로 옮긴 것)",
+ "preset": "gb-qa-126",
+ "cases": [
+  {
+   "id": "TC-01",
+   "sheet_row": 2,
+   "title": "아이싱 뽑기 / 진입 / 아이싱 뽑기 탭을 누르면 픽업 화면이 나온다",
+   "sheet": {"steps": "로비 → 뽑기 → 왼쪽 「아이싱 뽑기」 탭", "expected": "아이싱 뽑기 화면, 1회·5회 뽑기 버튼, 최근 상자 내역·확률 정보 버튼이 보인다"},
+   "auto": true,
+   "start": "lobby",
+   "steps": [
+    {"do": "route", "name": "lobby_to_gacha", "args": ["_btnIcing"]},
+    {"do": "wait", "select": {"inst": "_nodeBuyOnce"}, "timeout": 15},
+    {"do": "checkpoint", "name": "icing-tab",
+     "expect": {
+      "present": [{"inst": "_labelTitle"}],
+      "tappable": ["_nodeBuyOnce", "_nodeBuyMulti", "_btnGachaLog", "_btnProbability"]
+     }}
+   ]
+  },
+  {
+   "id": "TC-02",
+   "sheet_row": 3,
+   "title": "아이싱 뽑기 / 확률 정보 / 아이싱 탭이 선택된 채 열린다",
+   "sheet": {"steps": "아이싱 뽑기 화면에서 「확률 정보」", "expected": "확률 정보 팝업이 아이싱 탭 선택 상태로 열린다"},
+   "auto": true,
+   "start": "lobby",
+   "steps": [
+    {"do": "route", "name": "lobby_to_gacha", "args": ["_btnIcing"]},
+    {"do": "tap", "target": "_btnProbability"},
+    {"do": "wait_scene", "scene": "PopShopGachaProbability"},
+    {"do": "checkpoint", "name": "probability",
+     "expect": {
+      "scene": "PopShopGachaProbability",
+      "disabled": ["_btnTabIcing"],
+      "count": [{"owner": "CellShopGachaProbabilityList", "min": 1}]
+     }},
+    {"do": "close_popup", "owner": "PopShopGachaProbability"},
+    {"do": "wait_scene", "scene": "SceneNavigator"}
+   ]
+  },
+  {
+   "id": "TC-03",
+   "sheet_row": 4,
+   "title": "아이싱 뽑기 / 최근 상자 내역 / 팝업이 열리고 닫힌다",
+   "sheet": {"steps": "「최근 상자 내역」 → 닫기", "expected": "최근 상자 내역 팝업이 열리고, 닫으면 뽑기 화면으로 돌아온다"},
+   "auto": true,
+   "start": "lobby",
+   "steps": [
+    {"do": "route", "name": "lobby_to_gacha", "args": ["_btnIcing"]},
+    {"do": "tap", "target": "_btnGachaLog"},
+    {"do": "wait_scene", "scene": "PopSettingChestLog"},
+    {"do": "checkpoint", "name": "chestlog", "expect": {"scene": "PopSettingChestLog"},
+     "mask": [{"owner": "CellSettingChestLog"}]},
+    {"do": "close_popup", "owner": "PopSettingChestLog"},
+    {"do": "wait_scene", "scene": "SceneNavigator"},
+    {"do": "checkpoint", "name": "chestlog-closed", "image": false,
+     "expect": {"tappable": ["_btnGachaLog"]}}
+   ]
+  },
+  {
+   "id": "TC-04",
+   "sheet_row": 5,
+   "title": "아이싱 뽑기 / 아이템 정보 / 아이싱 셀을 누르면 이름·설명 말풍선",
+   "sheet": {"steps": "아이싱 셀 하나를 누른다", "expected": "아이템 이름과 설명이 있는 말풍선이 뜬다"},
+   "auto": true,
+   "start": "lobby",
+   "steps": [
+    {"do": "route", "name": "lobby_to_gacha", "args": ["_btnIcing"]},
+    {"do": "tap", "target": "#itemDetailPopupButton"},
+    {"do": "wait", "select": {"owner": "CellCommonItemDetail", "inst": "_labelName"}},
+    {"do": "checkpoint", "name": "item-detail",
+     "expect": {"present": [{"owner": "CellCommonItemDetail", "inst": "_labelName"},
+                            {"owner": "CellCommonItemDetail", "inst": "_labelDescription"}]}},
+    {"do": "tap_xy", "x": "50%", "y": "95%", "label": "말풍선 바깥 탭"},
+    {"do": "wait_gone", "select": {"owner": "CellCommonItemDetail"}}
+   ]
+  },
+  {
+   "id": "TC-05",
+   "sheet_row": 6,
+   "title": "아이싱 뽑기 / 1회 뽑기 / 그리기 연출 → 결과",
+   "sheet": {"steps": "「1회」 → 도안 그리기 → 커튼 터치", "expected": "그리기 연출 후 결과 아이싱이 나오고 재화가 100 줄어든다"},
+   "auto": true,
+   "spends": true,
+   "start": "lobby",
+   "steps": [
+    {"do": "route", "name": "lobby_to_gacha", "args": ["_btnIcing"]},
+    {"do": "tap", "target": "_nodeBuyOnce"},
+    {"do": "wait", "select": {"text": "도안을 그려보세요!"}, "timeout": 30},
+    {"do": "checkpoint", "name": "draw", "image": false, "expect": {"present": [{"text": "도안을 그려보세요!"}]}},
+    {"do": "swipe", "x1": "35%", "y1": "60%", "x2": "65%", "y2": "40%", "ms": 900},
+    {"do": "wait", "select": {"text": "Touch!"}, "timeout": 40},
+    {"do": "tap_xy", "x": "50%", "y": "50%", "label": "커튼 열기"},
+    {"do": "wait", "select": {"owner": "CellShopGachaIcingOpen"}, "timeout": 15},
+    {"do": "checkpoint", "name": "result",
+     "expect": {"count": [{"owner": "CellShopGachaIcingOpen", "min": 1}], "present": ["확인"]},
+     "mask": [{"owner": "CellShopGachaIcingOpen"}]},
+    {"do": "tap", "target": "확인", "after": 3}
+   ]
+  },
+  {
+   "id": "TC-06",
+   "sheet_row": 7,
+   "title": "아이싱 뽑기 / 옷장 / 옷장 버튼으로 마이쿠키 옷장 이동",
+   "sheet": {"steps": "왼쪽 아래 「옷장」", "expected": "마이쿠키 옷장 화면으로 이동한다"},
+   "auto": true,
+   "start": "lobby",
+   "steps": [
+    {"do": "route", "name": "lobby_to_gacha", "args": ["_btnIcing"]},
+    {"do": "tap", "target": "옷장"},
+    {"do": "wait", "select": {"text": "마이쿠키 옷장"}, "timeout": 15},
+    {"do": "checkpoint", "name": "closet", "expect": {"present": [{"text": "마이쿠키 옷장"}], "tappable": ["_btnBack"]}},
+    {"do": "back", "after": 3}
+   ]
+  },
+  {
+   "id": "TC-07",
+   "sheet_row": 8,
+   "title": "아이싱 뽑기 / 재화 부족 / 재화가 모자라면 부족 팝업",
+   "sheet": {"pre": "아이싱 뽑기 재화 100 미만", "steps": "「1회」", "expected": "재화 부족 팝업, 「취소」로 닫힌다"},
+   "auto": false,
+   "reason": "계정 상태(재화 100 미만)가 필요하다 — 계정 데이터를 바꿀 수 있는 환경에서만 자동화"
+  },
+  {
+   "id": "TC-08",
+   "sheet_row": 9,
+   "title": "아이싱 뽑기 / 사운드 / 뽑기 연출 효과음",
+   "sheet": {"steps": "1회 뽑기", "expected": "그리기·커튼 효과음이 난다"},
+   "auto": false,
+   "reason": "소리는 화면 트리·캡처로 판정할 수 없다 — 사람 확인"
+  }
+ ]
+}

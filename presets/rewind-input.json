@@ -1,0 +1,7 @@
+{
+  "기본": {"input": {"mode": "random", "seed": 0, "actionsPerSec": 0.8, "slideRatio": 0.3, "doubleJumpRatio": 0.4, "abilityEverySec": 8, "rescue": true},
+           "plays": 2, "timeoutSec": 300, "target": "latest"},
+  "입력 없음": {"input": {"mode": "none"}, "plays": 1, "timeoutSec": 300, "target": "latest"},
+  "많이 누르기": {"input": {"mode": "random", "seed": 0, "actionsPerSec": 2.0, "slideRatio": 0.4, "doubleJumpRatio": 0.6, "abilityEverySec": 4, "rescue": true},
+               "plays": 3, "timeoutSec": 300, "target": "latest"}
+}

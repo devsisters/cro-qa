@@ -1,0 +1,107 @@
+{
+  "suite": "sample-rewind",
+  "kind": "rewind",
+  "note": "자동 되감기 샘플. 맵은 테스트 맵 목록(디버그 → 테스트용 화면 → Play!)에 보이는 이름. 카드 id 는 testmode cards 로 확인한다.",
+  "cases": [
+    {
+      "id": "RW-01",
+      "title": "정상 맵에서 10초마다 되감기 3회",
+      "map": "aaaa0001",
+      "plays": 2,
+      "seed": 1,
+      "cards": {
+        "cookie1": "random",
+        "cookie2": "random",
+        "pet": "random",
+        "treasures": [
+          "random",
+          "random",
+          "random"
+        ]
+      },
+      "target": "latest",
+      "triggers": [
+        {
+          "type": "interval",
+          "delaySec": 10,
+          "count": 3
+        }
+      ],
+      "timeoutSec": 300,
+      "input": {
+        "mode": "random",
+        "seed": 100,
+        "actionsPerSec": 0.8,
+        "slideRatio": 0.3,
+        "doubleJumpRatio": 0.4,
+        "abilityEverySec": 8
+      }
+    },
+    {
+      "id": "RW-02",
+      "title": "체력 사망 후 부활하고 3초 뒤 되감기 (붉은알 등 부활 보물 고정 — id 는 QA 가 채운다)",
+      "map": "aaaa0001",
+      "plays": 2,
+      "seed": 2,
+      "cards": {
+        "cookie1": "random",
+        "cookie2": "random",
+        "pet": "random",
+        "treasures": [
+          "random",
+          "random",
+          "random"
+        ]
+      },
+      "triggers": [
+        {
+          "type": "afterRevive",
+          "delaySec": 3,
+          "count": 1
+        }
+      ],
+      "timeoutSec": 300,
+      "input": {
+        "mode": "random",
+        "seed": 200,
+        "actionsPerSec": 0.8,
+        "slideRatio": 0.3,
+        "doubleJumpRatio": 0.4,
+        "abilityEverySec": 8
+      }
+    },
+    {
+      "id": "RW-03",
+      "title": "보너스타임 갔다 온 뒤 3초 뒤 되감기 (GD 맵 필요 — 조작 없이 보너스 아이템에 닿는 맵)",
+      "map": "aaaa0001",
+      "plays": 1,
+      "seed": 3,
+      "cards": {
+        "cookie1": "random",
+        "cookie2": "random",
+        "pet": "random",
+        "treasures": [
+          "random",
+          "random",
+          "random"
+        ]
+      },
+      "triggers": [
+        {
+          "type": "afterBonusReturn",
+          "delaySec": 3,
+          "count": 1
+        }
+      ],
+      "timeoutSec": 300,
+      "input": {
+        "mode": "random",
+        "seed": 300,
+        "actionsPerSec": 0.8,
+        "slideRatio": 0.3,
+        "doubleJumpRatio": 0.4,
+        "abilityEverySec": 8
+      }
+    }
+  ]
+}
