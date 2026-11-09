@@ -321,7 +321,10 @@ table.rewinds { margin: 4px 0 8px; font-size: 0.9em; }
 .outgame .toolbar label select { max-width: 320px; }
 .og-search { min-width: 260px; }
 .og-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
-.og-split.with-detail { grid-template-columns: minmax(0, 1fr) 420px; }
+.og-split.with-detail { grid-template-columns: minmax(0, 1fr) minmax(560px, 42%); }
+table.tc { width: 100%; }
+table.tc td.sc { white-space: nowrap; }
+table.tc .og-pick { margin-right: 6px; vertical-align: middle; }
 .og-list { min-width: 0; }
 table.tc td { vertical-align: top; }
 table.tc td.no { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }

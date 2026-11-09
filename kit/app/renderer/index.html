@@ -178,10 +178,12 @@
         <input id="ogSearch" class="og-search" placeholder="검색 — No · 분류 · 기대 결과">
         <span class="spacer"></span>
         <span id="ogStatus" class="muted"></span>
+        <button id="ogPickAll" title="지금 보이는 TC 중 시나리오가 있는 것을 모두 체크하거나 모두 푼다">보이는 시나리오 모두 체크</button>
+        <button id="ogToRun" class="primary" disabled>체크한 시나리오 실행으로</button>
       </div>
       <div class="og-split">
         <div class="og-list">
-          <table class="grid tc" id="ogTable"><thead><tr><th>No</th><th>중요도</th><th>분류</th><th>기대 결과</th><th>AOS</th><th>iOS</th><th>시나리오</th></tr></thead><tbody></tbody></table>
+          <table class="grid tc" id="ogTable"><thead><tr><th>No</th><th>중요도</th><th>분류</th><th>기대 결과</th><th>시나리오</th></tr></thead><tbody></tbody></table>
           <p id="ogEmpty" class="muted" hidden></p>
         </div>
         <aside id="ogDetail" class="og-detail" hidden></aside>

@@ -860,16 +860,17 @@ function renderOutgame() {
     if (q && !`${tc.no} ${tcPath(tc)} ${tc.expected} ${tc.section}`.toLowerCase().includes(q)) continue;
     if (tc.section !== lastSection) {
       lastSection = tc.section;
-      if (tc.section) rows.push(`<tr class="sec"><td colspan="7">${esc(tc.section)}</td></tr>`);
+      if (tc.section) rows.push(`<tr class="sec"><td colspan="5">${esc(tc.section)}</td></tr>`);
     }
     shown += 1;
+    const pick = sc ? `<input type="checkbox" class="og-pick" data-file="${esc(sc.s.file)}" title="체크하면 「체크한 시나리오 실행으로」에 들어간다"${state.ogSelected.has(sc.s.file) ? ' checked' : ''}>` : '';
     const mark = !sc ? `<button class="og-make" data-key="${esc(tc.key)}">만들기</button>`
       : sc.changed ? `<span class="sc-warn" title="시트 문구가 시나리오를 만들 때와 다르다 — 확인 후 고친다">✓ 문구 바뀜</span>`
         : `<span class="sc-ok" title="단계 ${sc.s.steps}개 · 채점 지점 ${sc.s.scoring}개${sc.s.notes ? ` · 메모 ${sc.s.notes}개` : ''}${sc.s.lastVerdict ? ` · 마지막 ${sc.s.lastVerdict}` : ''}">✓</span>${sc.s.scoring ? ` <span class="muted sc-n">채점 ${sc.s.scoring}</span>` : ''}${sc.s.lastVerdict ? ` <span class="st ${verdictCls(sc.s.lastVerdict)}">${esc(VERDICT_KO[sc.s.lastVerdict] || sc.s.lastVerdict)}</span>` : ''}`;
     rows.push(`<tr class="tc-row${og.selKey === tc.key ? ' sel' : ''}" data-key="${esc(tc.key)}">
       <td class="no">${esc(tc.no)}</td><td class="st">${esc(tc.priority)}</td><td class="path">${esc(tcPath(tc))}</td>
       <td class="exp">${tc.expected ? esc(tc.expected) : '<span class="muted">(기대 결과 없음)</span>'}</td>
-      <td class="st ${stClass(tc.aos)}">${esc(tc.aos)}</td><td class="st ${stClass(tc.ios)}">${esc(tc.ios)}</td><td class="st">${mark}</td></tr>`);
+      <td class="st sc">${pick}${mark}</td></tr>`);
   }
   $('#ogTable tbody').innerHTML = rows.join('');
   $('#ogEmpty').hidden = shown > 0;
@@ -877,6 +878,14 @@ function renderOutgame() {
     : !tab ? '탭을 고른다.'
       : onlyAuto && !withSc ? '이 탭에는 아직 시나리오가 없습니다 — 「시나리오 있는 것만」을 끄고 TC 의 「만들기」를 누른다.' : '맞는 TC 가 없습니다.';
   $('#ogStatus').textContent = tab ? `TC ${tab.tcs.length}개 · 시나리오 ${withSc}개${shown !== tab.tcs.length ? ` · ${shown}개 보임` : ''}` : '';
+  $$('#ogTable .og-pick').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      if (cb.checked) state.ogSelected.add(cb.dataset.file); else state.ogSelected.delete(cb.dataset.file);
+      paintOgPick();
+    });
+  });
+  paintOgPick();
   $$('#ogTable tr.tc-row').forEach((tr) => tr.addEventListener('click', (e) => {
     og.selKey = tr.dataset.key;
     $$('#ogTable tr.tc-row').forEach((x) => x.classList.toggle('sel', x === tr));
@@ -896,7 +905,6 @@ async function showTcDetail(action) {
     <div class="muted">${esc(tc.section || '')}</div>
     <div class="exp">${esc(tc.expected || '(기대 결과 없음)')}</div>
     <dl><dt>분류</dt><dd>${esc(tcPath(tc))}</dd><dt>중요도</dt><dd>${esc(tc.priority)}</dd>
-      <dt>결과</dt><dd>AOS ${esc(tc.aos || '-')} · iOS ${esc(tc.ios || '-')}</dd>
       ${tc.jira ? `<dt>JIRA</dt><dd>${esc(tc.jira)}</dd>` : ''}${tc.comment ? `<dt>Comment</dt><dd>${esc(tc.comment)}</dd>` : ''}
       <dt>시트 줄</dt><dd>${tc.row}</dd><dt>TC 키</dt><dd><code>${esc(tc.key)}</code></dd></dl>
     <h3>시나리오</h3>
@@ -942,13 +950,13 @@ function scoringHtml(data, file) {
   if (!points.length) return `${lastLine}<p class="muted">채점표가 아직 없다 — 시나리오를 만들며 「여기 캡처해」라고 하면 그 화면이 채점 지점으로 등록되고, Claude 가 조건 초안을 만든다.</p>`;
   const rows = points.map((p) => {
     const lines = expectLines(p.expect);
-    const state = p.confirmed ? `<span class="sc-ok">확정</span> <span class="muted">${esc(p.confirmedBy || '')}</span>`
+    const confirmHtml = p.confirmed ? `<span class="sc-ok">확정</span> <span class="muted">${esc(p.confirmedBy || '')}</span>`
       : `<span class="sc-warn">확정 전</span> <button class="sc-confirm" data-name="${esc(p.name)}">조건 확정</button>`;
     const refs = Object.keys(p.platforms || {}).map((pl) => `<figure><img src="${fileUrl(`${base}/${pl}/${p.name}.png`)}" loading="lazy"><figcaption>${pl === 'aos' ? 'AOS' : 'iOS'} 참고</figcaption></figure>`).join('');
     const vals = (p.values || []).map((v) => `<div>${esc(v.label)} = <strong>${esc(v.value)}</strong></div>`).join('');
     const lc = last && last.checkpoints && last.checkpoints[p.name];
     const res = lc ? `<span class="st ${verdictCls(lc.verdict)}">${esc(VERDICT_KO[lc.verdict] || lc.verdict || '-')}</span>${(lc.failed || []).map((f) => `<div class="sc-fail">✗ ${esc(f)}</div>`).join('')}${lc.shot ? `<figure><img src="${fileUrl(`${state.kit}/${lc.shot}`)}" loading="lazy"><figcaption>${esc(last.platform)} 실행 캡처</figcaption></figure>` : ''}` : '<span class="muted">-</span>';
-    return `<tr><td><strong>${esc(p.name)}</strong>${p.label ? `<div class="muted">${esc(p.label)}</div>` : ''}<div>${state}</div></td>
+    return `<tr><td><strong>${esc(p.name)}</strong>${p.label ? `<div class="muted">${esc(p.label)}</div>` : ''}<div>${confirmHtml}</div></td>
       <td>${lines.length ? `<ul class="sc-checks">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<span class="muted">조건 없음</span>'}${vals}
         ${p.human ? `<div class="sc-human">사람 확인: ${esc(p.humanNote || '캡처를 보고 판단')}</div>` : ''}${p.compareImage ? '<div class="muted">참고 그림과 화면 비교도 한다</div>' : ''}
         <div class="sc-refs">${refs}</div></td><td>${res}</td></tr>`;
@@ -968,6 +976,23 @@ function askClaudeScenario(tabName, tc, file) {
   $('#chatInput').value = prompt;
   $('#chatInput').focus();
 }
+// 체크한 시나리오 → 실행 탭(아웃게임). 탭을 바꿔도 체크는 남는다
+function paintOgPick() {
+  const n = state.ogSelected.size;
+  $('#ogToRun').disabled = !n;
+  $('#ogToRun').textContent = n ? `체크한 시나리오 ${n}개 실행으로` : '체크한 시나리오 실행으로';
+}
+$('#ogPickAll').addEventListener('click', () => {
+  const boxes = $$('#ogTable .og-pick');
+  const all = boxes.length && boxes.every((b) => b.checked);
+  boxes.forEach((b) => { if (all) state.ogSelected.delete(b.dataset.file); else state.ogSelected.add(b.dataset.file); });
+  renderOutgame();
+});
+$('#ogToRun').addEventListener('click', () => {
+  if (!state.ogSelected.size) return;
+  $('#runKind').value = 'outgame';
+  activateTab('run');
+});
 $('#ogTab').addEventListener('change', () => { og.tab = $('#ogTab').value; lsSet('qa.ogTab', og.tab); og.selKey = ''; $('#ogDetail').hidden = true; $('.og-split').classList.remove('with-detail'); renderOutgame(); });
 $('#ogOnlyAuto').addEventListener('change', renderOutgame);
 $('#ogSearch').addEventListener('input', renderOutgame);
@@ -999,7 +1024,7 @@ function refreshRunLabel() {
   $('#runRelaunchWrap').style.display = kind === 'outgame' ? '' : 'none';
   $('#runSuiteLabel').textContent = kind === 'rewind'
     ? `${(state.rwFile || '-').replace(/\.json$/, '')} · 케이스 ${((state.rwSuite || {}).cases || []).length}개`
-    : `${(state.ogFile || '-').replace(/\.json$/, '')} · 선택 ${state.ogSelected.size}개`;
+    : `아웃게임 시나리오 ${state.ogSelected.size}개${state.ogSelected.size ? ` · ${[...state.ogSelected].slice(0, 3).map((f) => f.split('/')[0]).filter((v, i, a) => a.indexOf(v) === i).join(', ')}` : ' — 아웃게임 탭에서 체크한다'}`;
   syncRunPanels();
 }
 function syncRunPanels() {
@@ -1077,18 +1102,18 @@ $('#runStart').addEventListener('click', async () => {
     const errs = caseModel.validateSuite(state.rwSuite);
     if (errs.length) { alert(`되감기 케이스에 고칠 것이 있다:\n${errs.join('\n')}`); return; }
     await qa.casesWrite(state.rwFile, state.rwSuite);
-  } else if (!state.ogSelected.size) { alert('아웃게임 케이스를 하나 이상 고른다'); return; }
+  } else if (!state.ogSelected.size) { alert('아웃게임 탭에서 실행할 시나리오를 하나 이상 체크한다'); return; }
   for (const platform of platforms) {
     $(`#log-${platform}`).textContent = '';
     runPanelStart(platform);
     try {
       await qa.runStart({
         kind, platform,
-        suiteFile: kind === 'rewind' ? state.rwFile : state.ogFile,
-        caseIds: kind === 'rewind' ? [] : [...state.ogSelected],
+        suiteFile: kind === 'rewind' ? state.rwFile : null,
+        scenarioFiles: kind === 'rewind' ? [] : [...state.ogSelected],
         relaunch: $('#runRelaunch').checked,
       });
-      logLine(platform, `▶ ${kind} ${kind === 'rewind' ? state.rwFile : state.ogFile} 시작`, 'muted');
+      logLine(platform, `▶ ${kind === 'rewind' ? `되감기 ${state.rwFile}` : `시나리오 ${state.ogSelected.size}개`} 시작`, 'muted');
     } catch (e) {
       logLine(platform, e.message, 'v-ERROR');
       clearInterval(runTimers[platform]);

@@ -18,6 +18,7 @@ const P = {
   gbDevice: path.join(KIT, 'tools', 'gb_device.py'),
   rewindRunner: path.join(KIT, 'tools', 'rewind_runner.py'),
   caseRunner: path.join(KIT, 'tools', 'case_runner.py'),
+  scenarioRun: path.join(KIT, 'tools', 'scenario_run.py'),
 };
 
 function readJson(file, fallback) {
@@ -254,7 +255,7 @@ function recordingsDir() {
   return path.join(root || KIT, 'recordings');
 }
 
-function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase }, onLine, onExit) {
+function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase, scenarioFiles }, onLine, onExit) {
   const settings = readSettings();
   let file;
   if (kind === 'rewind' && recordCase) {
@@ -265,6 +266,14 @@ function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase 
     file = path.join(P.runs, '_record-suite.json');
     fs.mkdirSync(P.runs, { recursive: true });
     fs.writeFileSync(file, JSON.stringify({ suite: 'record', kind: 'rewind', cases: [c] }, null, 1));
+  } else if (kind !== 'rewind' && Array.isArray(scenarioFiles) && scenarioFiles.length) {
+    // 아웃게임 — 체크한 시나리오 파일들(scenarios/<탭>/<키>.json)을 scenario_run 으로 한 번에 돌린다
+    const root = path.join(scenarioRoot() || KIT, 'scenarios');
+    file = scenarioFiles.map((f) => {
+      const abs = path.resolve(root, String(f));
+      if (!abs.startsWith(root + path.sep) || !abs.endsWith('.json') || !fs.existsSync(abs)) throw new Error(`시나리오 파일이 없다: ${f}`);
+      return abs;
+    });
   } else {
     file = caseFile(suiteFile);
   }
@@ -272,7 +281,7 @@ function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase 
   const deviceId = (devices[platform] || {}).device;
   const args = kind === 'rewind'
     ? [P.rewindRunner, file, '--platform', platform]
-    : [P.caseRunner, file, '--platform', platform];
+    : Array.isArray(file) ? [P.scenarioRun, ...file, '--platform', platform] : [P.caseRunner, file, '--platform', platform];
   if (deviceId) args.push('--device', deviceId);
   if (caseIds && caseIds.length) args.push('--case', caseIds.join(','));
   if (kind === 'rewind') args.push('--recordings', recordingsDir());
