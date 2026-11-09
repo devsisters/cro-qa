@@ -1,0 +1,315 @@
+{
+ "key": "1ff3cdf861c0",
+ "tab": "CPT 인벤토리",
+ "no": "1",
+ "sheet": "CRO_14.50N Test Case",
+ "tc": {
+  "section": "-",
+  "main": "진입",
+  "sub1": "",
+  "sub2": "",
+  "sub3": "",
+  "priority": "Critical",
+  "expected": "오븐 로비 좌측에는 [쿠키] 버튼이 출력되며, 터치 시 CPT 인벤토리 화면에 진입한다."
+ },
+ "createdBy": "Sangbeom Lee",
+ "updatedAt": "2026-11-09T17:30:53",
+ "case": {
+  "start": "lobby",
+  "spends": false,
+  "note": "「좌측」 위치는 트리 조건으로 옮기지 않았다(expect 에 위치 조건이 없다) — 정답지 이미지 비교에 맡긴다. 2026-11-09 aos 로비 트리에서 _btnMyCookie rect x=39.5~84.5 (화면 폭 692), ios(iPad) 로비 트리에서 x=13.5~58.5 (화면 폭 568) 로 좌측임을 확인했다. 2026-11-09 aos·ios 모두 PASS(aos run: kit/runs/scenario-aos-20261109-164252). 「마이쿠키 앞으로 정렬」(담당자 요청, 시트 기대 결과 밖): 트리에 카드 배경색이 없어 「초록 배경 쿠키」 = 카드 이름 「마이쿠키」 로 본다(2026-11-09 aos 캡처에서 초록 배경은 마이쿠키 카드 하나뿐). 켬 = 체크 표시 _spriteMyCookieFirst 있음 + 첫 카드 마이쿠키. 끔 = 체크 표시 없음 + 마이쿠키를 뺀 나머지 순서가 켬과 같음(정렬 순서 유지) + 첫 카드가 마이쿠키 아님. 「첫 카드가 마이쿠키 아님」 은 이 계정에서 마이쿠키가 최신순 맨 앞이 아니라서 성립한다(2026-11-09 aos 최신순 9번째). 토글은 앱에 저장되므로 시작할 때 꺼진 상태로 맞추고, 끝나면 꺼진 상태로 둔다.",
+  "steps": [
+   {
+    "do": "wait",
+    "select": "_btnMyCookie",
+    "label": "로비 「쿠키」 버튼 대기"
+   },
+   {
+    "do": "checkpoint",
+    "name": "lobby-cookie-button",
+    "expect": {
+     "tappable": [
+      "_btnMyCookie"
+     ],
+     "present": [
+      {
+       "owner": "#parent",
+       "text": "쿠키"
+      }
+     ]
+    },
+    "mask": [
+     {
+      "owner": "CellLobbyCookie"
+     }
+    ]
+   },
+   {
+    "do": "tap",
+    "target": "_btnMyCookie",
+    "label": "로비 → 쿠키"
+   },
+   {
+    "do": "wait",
+    "select": {
+     "owner": "CellCookieListTabBtn",
+     "inst": "_btnTabCookie"
+    },
+    "label": "CPT 인벤토리 진입 대기"
+   },
+   {
+    "do": "checkpoint",
+    "name": "cpt-inventory",
+    "expect": {
+     "present": [
+      {
+       "owner": "CellCookieListTabBtn",
+       "text": "쿠키"
+      },
+      {
+       "owner": "SceneCookieList",
+       "text": "보유한 것만 보기"
+      }
+     ],
+     "absent": [
+      "_btnMyCookie"
+     ]
+    }
+   },
+   {
+    "do": "tap",
+    "target": "마이쿠키 앞으로 정렬",
+    "when": {
+     "present": {
+      "owner": "SceneCookieList",
+      "inst": "_spriteMyCookieFirst"
+     }
+    },
+    "label": "「마이쿠키 앞으로 정렬」 이 켜져 있으면 꺼서 시작 상태를 맞춘다"
+   },
+   {
+    "do": "wait_gone",
+    "select": {
+     "owner": "SceneCookieList",
+     "inst": "_spriteMyCookieFirst"
+    },
+    "label": "정렬 토글 꺼짐 확인"
+   },
+   {
+    "do": "tap",
+    "target": "마이쿠키 앞으로 정렬",
+    "label": "「마이쿠키 앞으로 정렬」 켜기"
+   },
+   {
+    "do": "wait",
+    "select": {
+     "owner": "SceneCookieList",
+     "inst": "_spriteMyCookieFirst"
+    },
+    "label": "정렬 토글 켜짐 확인"
+   },
+   {
+    "do": "checkpoint",
+    "name": "cpt-mycookie-first-on",
+    "expect": {
+     "present": [
+      {
+       "owner": "SceneCookieList",
+       "inst": "_spriteMyCookieFirst"
+      }
+     ],
+     "order": [
+      {
+       "select": {
+        "owner": "CellCookieListCard",
+        "inst": "_labelCookieName"
+       },
+       "first": [
+        "마이쿠키"
+       ]
+      }
+     ]
+    },
+    "mask": [
+     {
+      "owner": "CellCookieListCard"
+     }
+    ]
+   },
+   {
+    "do": "tap",
+    "target": "마이쿠키 앞으로 정렬",
+    "label": "「마이쿠키 앞으로 정렬」 끄기"
+   },
+   {
+    "do": "wait_gone",
+    "select": {
+     "owner": "SceneCookieList",
+     "inst": "_spriteMyCookieFirst"
+    },
+    "label": "정렬 토글 꺼짐 확인"
+   },
+   {
+    "do": "checkpoint",
+    "name": "cpt-mycookie-first-off",
+    "expect": {
+     "absent": [
+      {
+       "owner": "SceneCookieList",
+       "inst": "_spriteMyCookieFirst"
+      }
+     ],
+     "order": [
+      {
+       "select": {
+        "owner": "CellCookieListCard",
+        "inst": "_labelCookieName"
+       },
+       "notFirst": [
+        "마이쿠키"
+       ],
+       "sameAs": "cpt-mycookie-first-on",
+       "ignore": [
+        "마이쿠키"
+       ]
+      }
+     ]
+    },
+    "mask": [
+     {
+      "owner": "CellCookieListCard"
+     }
+    ]
+   }
+  ]
+ },
+ "notes": [
+  {
+   "at": "2026-11-09",
+   "by": "Sangbeom Lee",
+   "text": "ios도 확인해야지"
+  },
+  {
+   "at": "2026-11-09",
+   "by": "Sangbeom Lee",
+   "text": "쿠키 버튼으로 들어온 인벤토리 화면을 aos·ios 두 플랫폼 모두 채점 지점(cpt-inventory)으로 캡처. 숫자나 쿠키들은 달라도 되고 형태만 똑같으면 정답"
+  },
+  {
+   "at": "2026-11-09",
+   "by": "Sangbeom Lee",
+   "text": "여기 캡처해 (CPT 인벤토리 화면, aos·ios)"
+  },
+  {
+   "at": "2026-11-09",
+   "by": "Sangbeom Lee",
+   "text": "화면은 SceneCookieList일거야  모든 씬들은 SceneNavigator 위에 씬이 있어서 그걸로 확정해"
+  },
+  {
+   "at": "2026-11-09",
+   "by": "Sangbeom Lee",
+   "text": "그리고 마이쿠키 앞으로 정렬 눌렀을때 초록 배경의 쿠키가 앞으로오고 껐을때 정렬 순서에 맞게 가는지도 체크해줘"
+  }
+ ],
+ "lastRun": {
+  "at": "2026-11-09T18:04:47",
+  "platform": "aos",
+  "verdict": "PASS",
+  "reason": "",
+  "run": "runs/scenario-aos-20261109-180430",
+  "checkpoints": {
+   "lobby-cookie-button": {
+    "verdict": "PASS",
+    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-lobby-cookie-button-1794215076174.png",
+    "failed": [],
+    "human": ""
+   },
+   "cpt-inventory": {
+    "verdict": "PASS",
+    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-cpt-inventory-1794215079892.png",
+    "failed": [],
+    "human": ""
+   },
+   "cpt-mycookie-first-on": {
+    "verdict": "PASS",
+    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-cpt-mycookie-first-on-1794215083087.png",
+    "failed": [],
+    "human": ""
+   },
+   "cpt-mycookie-first-off": {
+    "verdict": "PASS",
+    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-cpt-mycookie-first-off-1794215086258.png",
+    "failed": [],
+    "human": ""
+   }
+  }
+ },
+ "scoring": [
+  {
+   "name": "cpt-inventory",
+   "label": "쿠키 버튼으로 CPT 인벤토리 화면에 진입한다",
+   "expect": {
+    "tappable": [
+     {
+      "owner": "SceneCookieList",
+      "inst": "_btnSortMenu"
+     },
+     {
+      "owner": "CellCookieListTabBtn",
+      "inst": "_btnTabRaidModeSkill"
+     },
+     {
+      "owner": "CellCookieListTabBtn",
+      "inst": "_btnTabSpell"
+     },
+     {
+      "owner": "CellCookieListTabBtn",
+      "inst": "_btnTabTreasure"
+     },
+     {
+      "owner": "CellCookieListTabBtn",
+      "inst": "_btnTabPet"
+     }
+    ],
+    "present": [
+     {
+      "owner": "SceneCookieList",
+      "type": "gb::sceneLayer::SceneCookieList"
+     },
+     {
+      "owner": "SceneCookieList",
+      "inst": "_labelMyCookieShowFirst",
+      "text": "마이쿠키 앞으로 정렬"
+     }
+    ],
+    "count": [
+     {
+      "owner": "CellCookieListCard",
+      "min": 1
+     }
+    ]
+   },
+   "confirmed": true,
+   "human": false,
+   "humanNote": "",
+   "compareImage": false,
+   "values": [],
+   "mask": [
+    {
+     "owner": "CellCookieListCard"
+    }
+   ],
+   "platforms": {
+    "aos": {
+     "at": "2026-11-09T17:23:29",
+     "by": "Sangbeom Lee"
+    },
+    "ios": {
+     "at": "2026-11-09T17:23:37",
+     "by": "Sangbeom Lee"
+    }
+   },
+   "confirmedBy": "Sangbeom Lee",
+   "confirmedAt": "2026-11-09T17:30:53"
+  }
+ ]
+}
