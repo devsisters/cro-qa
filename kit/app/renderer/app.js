@@ -17,6 +17,75 @@ function askText(label, value) {
   });
 }
 
+// 목록 칸 — 브라우저 기본 자동완성(datalist)은 맥에서 목록이 길면 스크롤이 안 돼서 직접 그린다.
+// 칸의 list 속성이 가리키는 datalist 를 목록 데이터로 그대로 쓴다(목록을 채우는 코드는 datalist 만 고친다)
+function attachCombo(input) {
+  const listId = input.getAttribute('list');
+  if (!listId) return;
+  input.removeAttribute('list');
+  input.setAttribute('autocomplete', 'off');
+  const pop = document.createElement('div');
+  pop.className = 'combo-pop';
+  pop.hidden = true;
+  document.body.appendChild(pop);
+  let active = -1;
+  let items = [];
+  const values = () => [...(document.getElementById(listId)?.options || [])].map((o) => o.value);
+  const place = () => {
+    const r = input.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom;
+    pop.style.left = `${r.left}px`;
+    pop.style.minWidth = `${Math.max(r.width, 220)}px`;
+    pop.style.maxWidth = `${Math.max(r.width, 420)}px`;
+    if (below < 200 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 2}px`; pop.style.maxHeight = `${Math.min(280, r.top - 12)}px`; }
+    else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 2}px`; pop.style.maxHeight = `${Math.min(280, below - 12)}px`; }
+  };
+  const render = (showAll) => {
+    const all = values();
+    const q = input.value.trim().toLowerCase();
+    items = showAll || !q ? all : all.filter((v) => v.toLowerCase().includes(q));
+    active = items.indexOf(input.value);
+    pop.innerHTML = all.length
+      ? `<div class="combo-count">${items.length === all.length ? `${all.length}개` : `${items.length} / ${all.length}개`}</div>`
+        + (items.length ? items.map((v, i) => `<div class="combo-item${i === active ? ' active' : ''}" data-i="${i}" title="${esc(v)}">${esc(v)}</div>`).join('') : '<div class="combo-empty">맞는 항목이 없습니다</div>')
+      : '<div class="combo-empty">목록이 없습니다 — 옆의 「기기에서…」 버튼으로 받는다</div>';
+    pop.hidden = false;
+    place();
+    const cur = pop.querySelector('.combo-item.active');
+    if (cur) cur.scrollIntoView({ block: 'nearest' });
+  };
+  const choose = (v) => {
+    input.value = v;
+    pop.hidden = true;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const move = (d) => {
+    if (!items.length) return;
+    active = (active + d + items.length) % items.length;
+    $$('.combo-item', pop).forEach((el, i) => el.classList.toggle('active', i === active));
+    pop.querySelector('.combo-item.active')?.scrollIntoView({ block: 'nearest' });
+  };
+  // 칸을 누르면 지금 값과 상관없이 전체 목록을 보여 주고(지금 값에 맞춰 스크롤), 글자를 치면 거른다
+  input.addEventListener('focus', () => render(true));
+  input.addEventListener('click', () => { if (pop.hidden) render(true); });
+  input.addEventListener('input', (e) => { if (e.isTrusted) render(false); });
+  input.addEventListener('blur', () => setTimeout(() => { pop.hidden = true; }, 150));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (pop.hidden) render(true); else move(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Enter' && !pop.hidden && active >= 0) { e.preventDefault(); choose(items[active]); }
+    else if (e.key === 'Escape') pop.hidden = true;
+  });
+  pop.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // 칸의 포커스를 잃지 않게 — 스크롤바를 끌어도 닫히지 않는다
+    const el = e.target.closest('.combo-item');
+    if (el) choose(items[Number(el.dataset.i)]);
+  });
+  window.addEventListener('resize', () => { if (!pop.hidden) place(); });
+  document.addEventListener('scroll', (e) => { if (!pop.hidden && e.target !== pop && !pop.contains(e.target)) place(); }, true);
+}
+
 function toast(el, text, isError) {
   el.textContent = text;
   el.style.color = isError ? 'var(--fail)' : '';
@@ -327,8 +396,25 @@ async function loadSuites() {
   };
   fill($('#rwSuite'), 'rewind', state.rwFile);
   fill($('#ogSuite'), 'outgame', state.ogFile);
+  showSuiteAuthors(list);
   if ($('#rwSuite').value) await openRewindSuite($('#rwSuite').value);
   if ($('#ogSuite').value) await openOutgameSuite($('#ogSuite').value);
+}
+// 묶음을 만든 사람(GitHub 아이디) — git 기록을 읽어 늦게 채운다. 아직 올리지 않은 묶음은 「공유 전」
+let suiteAuthorCache = {};
+async function showSuiteAuthors(list) {
+  const paint = () => {
+    for (const sel of [$('#rwSuite'), $('#ogSuite')]) {
+      for (const o of sel.options) {
+        const x = list.find((y) => y.file === o.value);
+        if (!x) continue;
+        const who = o.value in suiteAuthorCache ? ` · ${suiteAuthorCache[o.value] || '공유 전'}` : '';
+        o.textContent = `${x.file} (${x.count})${who}`;
+      }
+    }
+  };
+  paint();
+  try { suiteAuthorCache = Object.assign({}, suiteAuthorCache, await qa.casesAuthors()); paint(); } catch (_) { /* 이름 없이 둔다 */ }
 }
 $('#rwSuite').addEventListener('change', () => openRewindSuite($('#rwSuite').value));
 $('#ogSuite').addEventListener('change', () => openOutgameSuite($('#ogSuite').value));
@@ -460,7 +546,7 @@ function readForm() {
   if (!c) return;
   for (const el of $$('[data-k]', $('#rwForm'))) {
     const k = el.dataset.k;
-    c[k] = ['plays', 'timeoutSec', 'seed'].includes(k) ? num(el.value) : el.value.trim();
+    c[k] = ['plays', 'timeoutSec', 'seed', 'stopAfterSec'].includes(k) ? num(el.value) : el.value.trim();
   }
   c.cards = {
     cookie1: cardValue($('[data-card="cookie1"]').value),
@@ -508,14 +594,29 @@ $('#rwAddCase').addEventListener('click', () => {
   renderForm();
   setDirty(true);
 });
-$('#rwDelCase').addEventListener('click', () => {
+$('#rwDelCase').addEventListener('click', async () => {
   if (!state.rwSuite || !currentCase()) return;
-  if (!confirm(`「${currentCase().title || currentCase().id}」 케이스를 삭제할까요? 저장해야 파일에 반영됩니다.`)) return;
+  const last = state.rwSuite.cases.length === 1;
+  const what = `「${currentCase().title || currentCase().id}」 케이스`;
+  if (!confirm(last ? `${what}가 이 묶음의 마지막 케이스입니다. 묶음 파일(${state.rwFile})까지 삭제할까요?` : `${what}를 삭제할까요? 바로 저장합니다.`)) return;
+  if (last) {
+    try {
+      await qa.casesDelete(state.rwFile);
+      state.rwFile = null;
+      setDirty(false);
+      await loadSuites();
+      if (!$('#rwSuite').value) { state.rwSuite = null; renderCaseList(); renderForm(); }
+      toast($('#rwStatus'), '묶음을 삭제했습니다 — 「변경 공유」로 올리면 팀 저장소에서도 지워집니다');
+    } catch (e) { toast($('#rwStatus'), e.message, true); }
+    return;
+  }
+  readForm();
   state.rwSuite.cases.splice(state.rwIndex, 1);
   state.rwIndex = Math.max(0, state.rwIndex - 1);
   renderCaseList();
   renderForm();
   setDirty(true);
+  await saveRewind();
 });
 $('#rwAddTrigger').addEventListener('click', () => {
   readForm();
@@ -527,7 +628,8 @@ $('#rwNewSuite').addEventListener('click', async () => {
   const name = await askText('새 묶음 파일 이름(영문·숫자·-, 확장자 없이)', 'rewind-new');
   if (!name) return;
   const file = `${name.replace(/\.json$/, '')}.json`;
-  const suite = { suite: name, kind: 'rewind', cases: [caseModel.defaultCase('RW-01')] };
+  const createdBy = await qa.ghLogin().catch(() => '');
+  const suite = Object.assign({ suite: name, kind: 'rewind' }, createdBy ? { createdBy } : {}, { cases: [caseModel.defaultCase('RW-01')] });
   try {
     await qa.casesWrite(file, suite);
     state.rwFile = file;
@@ -577,9 +679,42 @@ $('#rwLoadMaps').addEventListener('click', async (e) => {
   toast($('#rwStatus'), `${platform} 에서 맵 목록 받는 중…`);
   try {
     const maps = await qa.deviceMaps(platform);
-    $('#mapList').innerHTML = maps.map((m) => `<option value="${esc(m)}">`).join('');
+    applyMaps(maps);
+    try { localStorage.setItem('qa.maps', JSON.stringify(maps)); } catch (_) { /* 이번 실행 동안만 쓴다 */ }
     toast($('#rwStatus'), `맵 ${maps.length}개 — 맵 칸에 입력하면 목록이 뜬다`);
   } catch (e) { toast($('#rwStatus'), e.message, true); }
+});
+
+function applyMaps(maps) {
+  $('#mapList').innerHTML = (maps || []).map((m) => `<option value="${esc(m)}">`).join('');
+}
+try { applyMaps(JSON.parse(localStorage.getItem('qa.maps') || '[]')); } catch (_) { /* 받은 적 없으면 비워 둔다 */ }
+
+// 게임 서버 프리셋 — 기기 탭에서 고르면 실행기가 서버 선택 창에서 그것을 고른다
+function applyServerPresets(names) {
+  $('#serverPresetList').innerHTML = (names || []).map((n) => `<option value="${esc(n)}">`).join('');
+}
+async function loadServerPresets(quiet) {
+  try {
+    const names = await qa.presetsServer();
+    applyServerPresets(names);
+    try { localStorage.setItem('qa.serverPresets', JSON.stringify(names)); } catch (_) { /* 이번 실행 동안만 */ }
+    if (!quiet) toast($('#serverPresetStatus'), `프리셋 ${names.length}개 — 칸을 누르면 목록이 뜬다`);
+  } catch (e) { if (!quiet) toast($('#serverPresetStatus'), e.message, true); }
+}
+async function initServerPreset() {
+  try { applyServerPresets(JSON.parse(localStorage.getItem('qa.serverPresets') || '[]')); } catch (_) { /* 없으면 받는다 */ }
+  const info = await qa.kitInfo();
+  $('#serverPreset').value = info.settings.serverPreset || '';
+  if (!$('#serverPresetList').options.length) loadServerPresets(true);
+}
+$('#loadServerPresets').addEventListener('click', () => loadServerPresets(false));
+$('#serverPreset').addEventListener('change', async () => {
+  const v = $('#serverPreset').value.trim();
+  const known = [...$('#serverPresetList').options].map((o) => o.value);
+  if (v && known.length && !known.includes(v)) { toast($('#serverPresetStatus'), `「${v}」은(는) 목록에 없는 프리셋이다`, true); return; }
+  await qa.settingsWrite({ serverPreset: v });
+  toast($('#serverPresetStatus'), v ? `다음 테스트부터 「${v}」로 들어간다` : '기본(gb-qa-126)으로 들어간다');
 });
 
 // 프리셋
@@ -829,6 +964,8 @@ async function openRun(name) {
   $('#repName').textContent = `${t.title}${t.sub ? ` · ${t.sub}` : ''}`;
   $('#repName').title = name;
   $('#repOpen').disabled = false;
+  state.repRel = run.report ? 'report.md' : '';
+  $('#repPath').textContent = run.dir ? `${run.dir}/${state.repRel}`.replace(/\/$/, '') : '';
   // 집계는 results.json 에서 — 리포트 본문을 읽지 않아도 결과가 보이게
   const all = [];
   for (const c of ((run.results || {}).cases || [])) for (const p of (c.plays || [])) all.push(p);
@@ -905,7 +1042,8 @@ function renderPlays(run, all, label) {
       ? `<table class="grid rewinds"><thead><tr><th>#</th><th>트리거</th><th>요청한 인게임 시각</th><th>돌아간 인게임 시각</th><th>지점</th><th>결과</th></tr></thead><tbody>${p.rewinds.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.trigger || '-')}</td><td>${fmtT(x.at)}</td><td>${fmtT(x.to)}</td><td>${pointText(x)}</td><td>${esc(x.result)}</td></tr>`).join('')}</tbody></table>`
       : '<div class="muted">되감기 없음</div>';
     const figs = (p.figures || []).map((f) => `<figure><img loading="lazy" src="${fileUrl(`${base}/${f.file}`)}"><figcaption>${esc(f.label)}${f.t !== null && f.t !== undefined ? ` · ${fmtT(f.t)}` : ''}</figcaption></figure>`).join('');
-    const log = p.gameLog ? `<button class="openlog" data-rel="${esc(`${p.case}/play${p.play}/${p.gameLog}`)}">게임 로그 열기</button>` : '';
+    const log = (p.gameLog ? `<button class="openlog" data-rel="${esc(`${p.case}/play${p.play}/${p.gameLog}`)}">게임 로그 열기</button>` : '')
+      + `<button class="revealplay" data-rel="${esc(`${p.case}/play${p.play}`)}" title="이 판의 캡처·로그가 든 폴더를 Finder 에서 연다">캡처 폴더</button>`;
     return `<section id="play-${i}" class="play-card v-${p.verdict}">
       <div class="play-head"><span class="chip v-${p.verdict}">${label[p.verdict] || p.verdict}</span> <strong>${esc(p.case)} · ${p.play}판</strong><span class="spacer"></span>${log}</div>
       <div class="play-reason">${esc(p.reason)} · 충돌 ${(p.events || []).filter((e) => e.type === 'crash').length}회</div>
@@ -916,8 +1054,10 @@ function renderPlays(run, all, label) {
   }).join('');
   $$('#repPlays img').forEach((img) => img.addEventListener('click', () => window.open(img.src)));
   $$('#repPlays .openlog').forEach((b) => b.addEventListener('click', () => qa.runsOpenFile(state.repName, b.dataset.rel)));
+  $$('#repPlays .revealplay').forEach((b) => b.addEventListener('click', () => qa.runsOpenFile(state.repName, b.dataset.rel).catch((e) => toast($('#repStatus'), e.message, true))));
 }
 $('#repOpen').addEventListener('click', () => state.repName && qa.runsOpen(state.repName));
+$('#repReveal').addEventListener('click', () => state.repName && qa.runsReveal(state.repName, state.repRel || '').catch((e) => toast($('#repStatus'), e.message, true)));
 
 // ---------- Claude 대화 ----------
 let botEl = null;
@@ -971,6 +1111,8 @@ qa.on('claude:done', ({ chatId, ok, sessionId, cost, error }) => {
 
 // ---------- 시작 ----------
 (async () => {
+  $$('input[list]').forEach(attachCombo);
+  initServerPreset();
   // 필수 도구가 빠져 있으면 「준비」 탭부터 보여준다
   runSetupCheck().then((r) => { if (r && r.fail) $('#tabs button[data-tab="setup"]').click(); });
   await loadDevices();

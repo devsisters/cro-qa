@@ -60,3 +60,11 @@ test('키트 프리셋과 샘플 되감기 묶음은 검사를 통과한다', ()
   const suite = JSON.parse(fs.readFileSync(path.join(KIT, 'cases', 'sample-rewind.json'), 'utf8'));
   assert.deepStrictEqual(m.validateSuite(suite), []);
 });
+
+test('되감기 다 하면 그만두기(stopAfterSec)는 비우거나 0 이상이고 프리셋에 실린다', () => {
+  const c = m.defaultCase('RW-01');
+  assert.deepStrictEqual(m.validateCase(Object.assign({}, c, { stopAfterSec: 5 })), []);
+  assert.deepStrictEqual(m.validateCase(Object.assign({}, c, { stopAfterSec: undefined })), []);
+  assert.ok(m.validateCase(Object.assign({}, c, { stopAfterSec: -1 })).length);
+  assert.strictEqual(m.applyPreset(c, m.presetFromCase(Object.assign({}, c, { stopAfterSec: 7 }))).stopAfterSec, 7);
+});

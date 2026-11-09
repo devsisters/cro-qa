@@ -108,6 +108,8 @@ def validate(suite):
                     errs.append(f'{where}: trigger delaySec 는 0 이상')
                 if t.get('point') is not None and (not isinstance(t.get('point'), int) or t['point'] < -1):
                     errs.append(f'{where}: trigger point 는 0(기본값)·1(5초 전)·2(10초 전)·3(15초 전)')
+        if c.get('stopAfterSec') is not None and (not isinstance(c['stopAfterSec'], (int, float)) or c['stopAfterSec'] < 0):
+            errs.append(f'{where}: stopAfterSec 는 0 이상(비우면 끝까지 달린다)')
         if c.get('target', 'latest') not in ('latest', 'oldest'):
             errs.append(f'{where}: target 은 latest 또는 oldest')
         if c.get('seed') is not None and (not isinstance(c['seed'], int) or c['seed'] < 0):
@@ -153,8 +155,9 @@ def resolve_cards(spec, pools, rng):
     return cards
 
 
-def judge_play(events, outcome, expect_rewind=True, limit_sec=None):
-    """limit_sec — 판당 제한 시간으로 끊은 판이면 그 초. 긴 맵을 앞부분만 확인하려고 거는 것이라 실패로 보지 않는다."""
+def judge_play(events, outcome, expect_rewind=True, limit_sec=None, stop_after=None):
+    """limit_sec — 판당 제한 시간으로 끊은 판이면 그 초. 긴 맵을 앞부분만 확인하려고 거는 것이라 실패로 보지 않는다.
+    stop_after — 되감기 목표 횟수를 채운 뒤 그 초만큼 더 달리고 그만둔 판이면 그 초. 이것도 실패로 보지 않는다."""
     types = [e.get('type') for e in events]
     if outcome:
         return 'ERROR', outcome
@@ -182,7 +185,8 @@ def judge_play(events, outcome, expect_rewind=True, limit_sec=None):
             return 'UNSURE', f'제한 시간 {limit_sec}초 안에 되감기가 일어나지 않았다' + (f' (skip: {", ".join(skips)})' if skips else ' — 트리거 시점이 제한 시간보다 뒤이거나 조건이 없었을 수 있다')
         return 'UNSURE', '되감기가 일어나지 않았다' + (f' (skip: {", ".join(skips)})' if skips else ' — 트리거 조건(부활·보너스 복귀)이 없었을 수 있다')
     asked = types.count('rewind_request')
-    return 'PASS', f'되감기 {done}회 성공' + (f' (요청 {asked}회)' if asked != done else '')
+    return 'PASS', f'되감기 {done}회 성공' + (f' (요청 {asked}회)' if asked != done else '') + \
+        (f' · 목표 횟수 뒤 {stop_after}초까지 확인' if stop_after is not None else '')
 
 
 class RewindRunner:
@@ -432,6 +436,11 @@ class RewindRunner:
         rewind_since = None
         quit_sent_at = None
         timed_out = False
+        # 되감기 목표 횟수(트리거 횟수의 합)를 채우면 stopAfterSec 뒤에 그만둔다 — 비우면 끝까지 달린다
+        stop_after = case.get('stopAfterSec')
+        goal = sum(t.get('count', 0) for t in case.get('triggers') or [])
+        stop_at = None
+        stopped_early = False
         misses = 0
         game_over_at = None
         while True:
@@ -440,10 +449,11 @@ class RewindRunner:
                 outcome = '300초 안에 판이 시작되지 않았다(멈춤 의심)'
                 res['shots'].append(self.dev.shot('timeout'))
                 break
-            if deadline is not None and rewind_since is None and now > deadline and quit_sent_at is None:
+            early = stop_at is not None and now > stop_at
+            if rewind_since is None and quit_sent_at is None and (early or (deadline is not None and now > deadline)):
                 # 앱을 다시 띄우지 않고 그만두기로 판을 끝낸다 — 결과 화면을 거쳐 테스트 화면으로 돌아가 다음 판을 이어 간다
-                res['shots'].append(self.dev.shot('timeout'))
-                timed_out = True
+                res['shots'].append(self.dev.shot('stop' if early else 'timeout'))
+                stopped_early, timed_out = early, not early
                 quit_sent_at = now
                 if not self.bridge('autorewind', op='quit').get('ok'):
                     outcome = f'제한 시간 {limit}초 — 그만두기를 보내지 못했다(멈춤 의심)'
@@ -480,6 +490,9 @@ class RewindRunner:
                     game_over_at = time.time()
                 if e['type'] == 'rewind_fail':
                     self.dismiss_rewind_fail()
+                if (e['type'] == 'rewind_done' and stop_after is not None and stop_at is None and goal
+                        and sum(1 for x in events if x['type'] == 'rewind_done') >= goal):
+                    stop_at = time.time() + stop_after
             if any(e['type'] == 'result_screen' for e in events):
                 break
             scene = self.dev.scene()
@@ -505,8 +518,10 @@ class RewindRunner:
                     json.dump(rec, f, ensure_ascii=False)
             res['recording'] = {'file': f'{case["map"]}.json', 'acts': len(acts)}
         res['verdict'], res['reason'] = judge_play(events, outcome, expect_rewind=bool(case.get('triggers')),
-                                                   limit_sec=limit if timed_out else None)
+                                                   limit_sec=limit if timed_out else None,
+                                                   stop_after=stop_after if stopped_early else None)
         res['timedOut'] = timed_out and not outcome
+        res['stoppedEarly'] = stopped_early and not outcome
         # 되감기마다 요청한 인게임 시각(playTime)과 돌아간 시각
         res['rewinds'] = []
         for e in events:
@@ -605,6 +620,7 @@ def main():
     ap.add_argument('--device')
     ap.add_argument('--out')
     ap.add_argument('--check', action='store_true')
+    ap.add_argument('--preset', help='서버 선택 창에서 고를 게임 서버 프리셋(기본 routes.PRESET)')
     a = ap.parse_args()
     suite = qc.load_json(a.suite_file)
     errs = validate(suite)
@@ -615,6 +631,9 @@ def main():
         ap.print_usage(sys.stderr)
         return 2
     from flowlib import Device
+    if a.preset:
+        import routes
+        routes.PRESET = a.preset
     name = suite.get('suite') or os.path.splitext(os.path.basename(a.suite_file))[0]
     stamp = time.strftime('%Y%m%d-%H%M%S')
     out = a.out or os.path.join(qc.RUNS, f'{name}-{a.platform}-{stamp}')

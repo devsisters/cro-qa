@@ -279,3 +279,24 @@ table.rewinds { margin: 4px 0 8px; font-size: 0.9em; }
 .play-card.flash { animation: playflash 1.2s ease-out; }
 @keyframes playflash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
 .app-update { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--accent); }
+
+/* 목록 칸(맵·카드·서버 프리셋) — 직접 그리는 드롭다운. 스크롤바는 항상 보이게 한다 */
+.combo-pop {
+  position: fixed; z-index: 50; max-height: 280px; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 18%, transparent); padding: 3px 0;
+}
+.combo-pop::-webkit-scrollbar { width: 10px; }
+.combo-pop::-webkit-scrollbar-track { background: var(--surface-alt); border-radius: 0 var(--radius) var(--radius) 0; }
+.combo-pop::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 70%, transparent); border-radius: 5px; border: 2px solid var(--surface-alt); }
+.combo-pop::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.combo-item { padding: 4px 10px; cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.combo-item:hover { background: var(--row-hover); }
+.combo-item.active { background: var(--selected); }
+.combo-empty { padding: 6px 10px; color: var(--muted); }
+.combo-count { padding: 2px 10px 4px; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+
+/* 리포트 경로 줄 */
+.rep-path { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
+.rep-path code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; }
+.suite-meta { margin-left: 8px; }

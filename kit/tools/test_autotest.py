@@ -388,6 +388,17 @@ class TestRewindRunner(unittest.TestCase):
         self.assertTrue(rewind_runner.validate(self.case(input={'slideRatio': 2})))
         self.assertTrue(rewind_runner.validate({'kind': 'basic', 'cases': []}))
 
+    def test_stop_after_rewinds_is_validated_and_judged_pass(self):
+        self.assertEqual(rewind_runner.validate(self.case(stopAfterSec=5)), [])
+        self.assertEqual(rewind_runner.validate(self.case(stopAfterSec=None)), [])
+        self.assertTrue(rewind_runner.validate(self.case(stopAfterSec=-1)))
+        self.assertTrue(rewind_runner.validate(self.case(stopAfterSec='5')))
+        ev = [{'type': 'rewind_request'}, {'type': 'rewind_done'}, {'type': 'rewind_request'}, {'type': 'rewind_done'}, {'type': 'timeout_stop'}]
+        verdict, reason = rewind_runner.judge_play(ev, '', stop_after=5)
+        self.assertEqual(verdict, 'PASS')
+        self.assertIn('목표 횟수 뒤 5초까지 확인', reason)
+        self.assertNotIn('목표 횟수', rewind_runner.judge_play(ev, '')[1])
+
     def test_resolve_cards_keeps_fixed_and_never_duplicates(self):
         import random
         pools = {'cookie': [100100, 100200, 100300], 'pet': [201800, 201900], 'treasure': [300100, 300200, 300300]}

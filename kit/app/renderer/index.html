@@ -55,6 +55,12 @@
           <tr data-platform="aos"><td>Android</td><td><select class="device-id"></select><div class="device-sub muted"></div></td><td class="device-cell"><span class="device-status muted">-</span><div class="device-hint muted"></div></td><td class="actions"><button class="launch" title="자동화 연결을 켠 채로 게임을 다시 띄운다">연결 모드로 실행</button><button class="ping">연결 확인</button></td></tr>
         </tbody>
       </table>
+      <div class="sect server-preset">
+        <label>게임 서버 프리셋 <input id="serverPreset" list="serverPresetList" placeholder="gb-qa-126 (기본)"></label>
+        <button id="loadServerPresets" title="게임 서버 선택 창과 같은 목록을 받는다">목록 받기</button>
+        <span id="serverPresetStatus" class="muted">테스트를 시작할 때 게임의 서버 선택 창에서 이 프리셋을 고른다 · 비우면 gb-qa-126</span>
+        <datalist id="serverPresetList"></datalist>
+      </div>
     </section>
 
     <!-- 되감기 -->
@@ -73,7 +79,7 @@
         <aside>
           <div class="aside-head"><span id="rwCount" class="muted"></span><button id="rwAddCase">+ 추가</button></div>
           <ul id="rwCases" class="list"></ul>
-          <button id="rwDelCase" class="danger">선택한 케이스 삭제</button>
+          <button id="rwDelCase" class="danger" title="바로 저장한다. 마지막 케이스를 지우면 묶음 파일도 지운다">선택한 케이스 삭제</button>
         </aside>
         <div id="rwForm" class="form detail">
           <ul id="rwErrors" class="errors"></ul>
@@ -140,6 +146,7 @@
             <div class="rw-fields">
               <label>케이스 ID<input data-k="id" class="short"></label>
               <label>판당 제한 시간<span class="unit"><input data-k="timeoutSec" type="number" min="30" class="short">초 · 로딩·되감기 시간 빼고 · 넘으면 그만두기로 끝내고 다음 판</span></label>
+              <label>되감기 다 하면<span class="unit"><input data-k="stopAfterSec" type="number" min="0" class="short" placeholder="끝까지">초 뒤 그만두기 · 트리거 횟수를 모두 채운 뒤 · 비우면 판 끝까지 달린다</span></label>
               <label>카드 시드<input data-k="seed" type="number" min="0" placeholder="비우면 매번 새로" class="short"></label>
               <label>입력 시드<input data-in="seed" type="number" min="0" placeholder="비우면 매번 새로" class="short"></label>
             </div>
@@ -212,6 +219,7 @@
               <span id="repStatus" class="muted"></span>
               <button id="repOpen">폴더 열기</button>
             </div>
+            <div class="rep-path"><code id="repPath" title="리포트 파일 경로 — 눌러서 전체 선택 후 복사"></code><button id="repReveal" title="Finder 에서 리포트 파일을 선택한 채로 연다(같은 폴더에 판별 캡처 폴더가 있다)">Finder 에서 보기</button></div>
             <div id="repCounts" class="chips"></div>
             <div id="repAttention" hidden><h3>확인할 판</h3><div id="repDiagnose"></div></div>
             <details class="sect" id="repFull"><summary>전체 리포트</summary><article id="repBody" class="md"></article></details>

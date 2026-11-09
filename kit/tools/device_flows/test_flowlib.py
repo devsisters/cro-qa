@@ -89,3 +89,63 @@ class FlowlibTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PresetAndTitleTest(unittest.TestCase):
+    """서버 선택 창 프리셋 고르기 · 제목 화면 영상 — 실제 기기의 트리 모양(2026-11-09 Android 실측)으로 흉내 낸다."""
+
+    def setUp(self):
+        import routes
+        self.routes = routes
+        self.sleep = mock.patch('routes.time.sleep', lambda s: None)
+        self.sleep.start()
+        self.addCleanup(self.sleep.stop)
+
+    def preset_nodes(self, offset, chosen):
+        area = {'id': 45, 'inst': '_gNodePresetList', 'rect': [117.0, 17.5, 228.0, 230.0]}
+        names = [f'p{i}' for i in range(30)]
+        items = [{'id': 100 + i, 'name': 'preset', 'text': n, 'opacity': 255 if n == chosen else 100,
+                  'rect': [117.0, 215.5 - 32 * i + offset, 228.0, 32.0]} for i, n in enumerate(names)]
+        return [area] + items
+
+    def test_select_preset_scrolls_until_visible_then_taps_and_confirms(self):
+        state = {'offset': 0.0, 'chosen': 'p0'}
+
+        class Bridge(FakeBridge):
+            def __call__(self, *args):
+                self.calls.append(args)
+                if args[0] == 'tree':
+                    return {'ok': True, 'result': {'nodes': test.preset_nodes(state['offset'], state['chosen'])}}
+                if args[0] == 'swipe':
+                    state['offset'] += float(args[args.index('--y2') + 1]) - float(args[args.index('--y1') + 1])
+                if args[0] == 'tap':
+                    y = float(args[args.index('--y') + 1])
+                    i = round((215.5 + 16 + state['offset'] - y) / 32)
+                    state['chosen'] = f'p{i}'
+                return {'ok': True, 'result': {}}
+        test = self
+        bridge = Bridge()
+        self.routes.select_preset(device(bridge), 'p25')
+        self.assertEqual(state['chosen'], 'p25')
+        self.assertTrue(any(c[0] == 'swipe' for c in bridge.calls))
+
+    def test_select_preset_missing_name_fails_clearly(self):
+        bridge = FakeBridge(nodes=self.preset_nodes(0, 'p0'))
+        with mock.patch('routes.time.time', side_effect=[0, 0] + [100] * 10):
+            with self.assertRaises(FlowFailure) as e:
+                self.routes.select_preset(device(bridge), 'nope', timeout=1)
+        self.assertEqual(e.exception.kind, 'NAME_MISSING')
+
+    def test_title_movie_turns_dont_show_again_on_and_skips_video(self):
+        bridge = FakeBridge(scene='Title', nodes=[{'inst': '_btnDontShowAgain', 'rect': [10, 10, 40, 20]},
+                                                 {'type': 'cocos2d::experimental::ui::VideoPlayer', 'rect': [0, 0, 568, 320]}])
+        self.routes.skip_title_movie(device(bridge))
+        taps = [c for c in bridge.calls if c[0] == 'tap']
+        self.assertEqual(taps[0][1:3], ('--node', '_btnDontShowAgain'))
+        self.assertEqual(len(taps), 2)
+
+    def test_title_movie_leaves_checked_box_alone(self):
+        bridge = FakeBridge(scene='Title', nodes=[{'inst': '_btnDontShowAgain', 'rect': [10, 10, 40, 20]},
+                                                 {'inst': '_spriteDontShowAgainCheck', 'rect': [10, 10, 20, 20]}])
+        self.routes.skip_title_movie(device(bridge))
+        self.assertFalse([c for c in bridge.calls if c[0] == 'tap'])

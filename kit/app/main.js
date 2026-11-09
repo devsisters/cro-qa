@@ -45,6 +45,14 @@ function createWindow() {
             fs.writeFileSync(path.join(process.env.QA_APP_SHOT, `${tab}.png`), img.toPNG());
           }
         }
+        if (process.env.QA_APP_STEPS && process.env.QA_APP_SHOT) {
+          // 점검용: [{ "js": 화면에서 돌릴 코드, "wait": ms, "shot": 파일 이름 }] 순서대로 조작하고 캡처한다
+          for (const step of JSON.parse(fs.readFileSync(process.env.QA_APP_STEPS, 'utf8'))) {
+            if (step.js) console.log(`[step] ${await win.webContents.executeJavaScript(step.js).catch((e) => `error ${e.message}`)}`);
+            await new Promise((r) => setTimeout(r, step.wait || 800));
+            if (step.shot) fs.writeFileSync(path.join(process.env.QA_APP_SHOT, `${step.shot}.png`), (await win.webContents.capturePage()).toPNG());
+          }
+        }
         app.quit();
       }, 25000);
     });
@@ -87,6 +95,21 @@ handle('cases:write', (name, suite) => {
   kit.writeCase(name, suite);
   return true;
 });
+// 묶음 파일 삭제 — 케이스를 모두 지운 묶음. 「변경 공유」로 올리면 팀 저장소에서도 지워진다
+handle('cases:delete', (name) => {
+  const file = kit.caseFile(name);
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+  return true;
+});
+handle('cases:authors', () => scen.suiteAuthors(kit.listCases().map((x) => x.file)));
+handle('gh:login', () => scen.ghLogin());
+// 게임 서버 프리셋 목록 — 게임 서버 선택 창과 같은 주소에서 이름만 받는다
+handle('presets:server', async () => {
+  const r = await fetch('https://crepe.devspie.com/presets/list', { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`프리셋 목록을 받지 못했다(HTTP ${r.status}) — 사내망·VPN 연결을 확인한다`);
+  const data = await r.json();
+  return (data.presets || []).map((p) => p.name).filter((n) => typeof n === 'string' && n);
+});
 handle('cases:check', (name) => new Promise((resolve) => {
   const { execFile } = require('child_process');
   const settings = kit.readSettings();
@@ -98,6 +121,14 @@ handle('cases:check', (name) => new Promise((resolve) => {
 handle('runs:list', () => kit.listRuns());
 handle('runs:read', (name) => kit.readRun(name));
 handle('runs:open', (name) => shell.openPath(kit.runDir(name)));
+// Finder 에서 실행 폴더 안의 파일·폴더를 선택한 채로 보여 준다(리포트·판별 캡처 폴더)
+handle('runs:reveal', (name, rel) => {
+  const dir = kit.runDir(name);
+  const target = path.resolve(dir, String(rel || ''));
+  if ((target !== dir && !target.startsWith(dir + path.sep)) || !fs.existsSync(target)) throw new Error('실행 폴더 안의 경로가 아니다');
+  shell.showItemInFolder(target);
+  return target;
+});
 // 실행 폴더 안의 파일만 연다(실패 판의 게임 로그 등)
 handle('runs:openFile', (name, rel) => {
   const dir = kit.runDir(name);

@@ -149,7 +149,7 @@ function readSettings() {
 
 function writeSettings(settings) {
   const allowed = {};
-  for (const key of ['python', 'claude', 'developerDir', 'scenarioDir', 'scenarioRepo']) if (typeof settings[key] === 'string') allowed[key] = settings[key].trim();
+  for (const key of ['python', 'claude', 'developerDir', 'scenarioDir', 'scenarioRepo', 'serverPreset']) if (typeof settings[key] === 'string') allowed[key] = settings[key].trim();
   if (allowed.scenarioDir && !path.isAbsolute(allowed.scenarioDir)) throw new Error('시나리오 폴더는 전체 경로여야 한다');
   writeJson(P.settings, Object.assign(readSettings(), allowed));
   return readSettings();
@@ -275,6 +275,8 @@ function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase 
   if (caseIds && caseIds.length) args.push('--case', caseIds.join(','));
   if (kind === 'rewind') args.push('--recordings', recordingsDir());
   if (kind !== 'rewind' && relaunch) args.push('--relaunch');
+  // 기기 탭에서 고른 게임 서버 프리셋 — 서버 선택 창이 뜨면 이것을 고른다(묶음에 적힌 프리셋보다 우선)
+  if (settings.serverPreset) args.push('--preset', settings.serverPreset);
   const child = spawn(settings.python, args, { cwd: KIT, env: toolEnv() });
   let lastJson = null;
   let buffer = '';

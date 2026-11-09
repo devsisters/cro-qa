@@ -19,8 +19,8 @@ def to_lobby(dev, preset=None, timeout=1800):
         sc = dev.scene()
         if sc == 'PopServerSelect':
             # 재시작 직후에는 프리셋 목록이 아직 비어 있을 수 있다 — 이름이 나올 때까지 기다린다
-            dev.wait(lambda: dev.find(name=preset), 20, 'preset list', f'프리셋 「{preset}」')
-            dev.tap(preset, 'preset'); dev.tap('시작!', 'preset start')
+            select_preset(dev, preset)
+            dev.tap('시작!', 'preset start')
         elif sc == 'PopBrownOneButton':
             # 다운로드 확인(「확인」)과 서버 응답 시간 초과(「OK」)가 같은 팝업이다 — 글자 말고 버튼 이름으로 누른다
             if dev.find(inst='_btnConfirm'):
@@ -31,6 +31,8 @@ def to_lobby(dev, preset=None, timeout=1800):
             dev.tap('checkBtn1', 'agree terms'); dev.tap('checkBtn2', 'agree privacy'); dev.tap('시작', 'agree start')
         elif sc == 'SceneTutorialMaster':
             _skip_tutorial(dev)
+        elif sc == 'Title':
+            skip_title_movie(dev)
         elif sc == LOBBY:
             # 공지·이벤트 팝업은 로비가 뜨고 몇 초 뒤에 올라온다. 로비가 한동안 그대로일 때만 도착으로 본다
             calm += 1
@@ -47,6 +49,61 @@ def to_lobby(dev, preset=None, timeout=1800):
         calm = 0
         time.sleep(3)
     raise FlowFailure('NOT_REACHED', 'to_lobby', f'{timeout}s 안에 로비에 오지 못했다 (scene={dev.scene()})')
+
+
+def select_preset(dev, preset, timeout=30):
+    """서버 선택 창에서 프리셋을 고른다. 목록은 화면 밖 항목까지 트리에 있으므로, 목록 영역 안에 들어올 때까지
+    목록을 끌어 올리거나 내린 뒤 누른다. 목록은 서버 응답이 오면 다시 그려진다 — 위치가 두 번 연속 같을 때만 누르고,
+    누른 뒤 선택된 항목(불투명 255)이 그 프리셋인지 확인한다. 다른 칸이 눌렸으면 다시 고른다."""
+    def read():
+        ns = dev.tree().get('nodes', [])
+        items = [n for n in ns if n.get('name') == 'preset']
+        target = next((n for n in items if n.get('text') == preset), None)
+        area = next((n for n in ns if n.get('inst') == '_gNodePresetList'), None)
+        chosen = next((n.get('text') for n in items if n.get('opacity') == 255), None)
+        return target, area, chosen
+
+    end = time.time() + timeout
+    prev = None
+    for _ in range(60):
+        target, area, chosen = read()
+        if chosen == preset and target:
+            return
+        if not (target and area):
+            if time.time() > end:
+                raise FlowFailure('NAME_MISSING', 'preset list', f'프리셋 「{preset}」이(가) 서버 선택 목록에 없다')
+            time.sleep(1.5)
+            continue
+        ax, ay, aw, ah = area['rect']
+        tx, ty, tw, th = target['rect']
+        cy = ty + th / 2
+        if ay + th / 2 <= cy <= ay + ah - th / 2:
+            if prev == target['rect']:
+                dev.tap_node(target, f'preset {preset}')
+                time.sleep(0.8)
+            prev = target['rect']
+            time.sleep(0.5)
+            continue
+        prev = None
+        # 좌표는 아래가 0 이다. 항목이 영역 아래에 있으면 목록을 위로 끌어 올린다. 관성이 붙지 않게 천천히 끈다
+        step = min(abs(cy - (ay + ah / 2)), ah * 0.7)
+        x = ax + aw / 2
+        y1, y2 = (ay + ah * 0.15, ay + ah * 0.15 + step) if cy < ay else (ay + ah * 0.85, ay + ah * 0.85 - step)
+        dev.swipe(x, y1, x, y2, ms=900)
+        time.sleep(0.8)
+    raise FlowFailure('NOT_REACHED', 'preset list', f'프리셋 「{preset}」을(를) 고르지 못했다')
+
+
+def skip_title_movie(dev):
+    """제목 화면 영상 — 「다시 보지 않기」가 꺼져 있으면 켜서 다음 실행부터 나오지 않게 하고, 재생 중이면 화면을 눌러 넘긴다.
+    체크 표시(_spriteDontShowAgainCheck)는 꺼져 있으면 트리에 나오지 않는다. 영상이 없는 빌드·서버면 버튼도 없다."""
+    ns = dev.nodes()
+    has = lambda inst: any(n.get('inst') == inst for n in ns)
+    if has('_btnDontShowAgain') and not has('_spriteDontShowAgainCheck'):
+        dev.tap('_btnDontShowAgain', 'title movie dont-show-again')
+    if any('VideoPlayer' in str(n.get('type')) for n in ns):
+        w, h = dev.visible_size()
+        dev.tap_xy(w / 2, h / 2, 'title movie skip')
 
 
 def _skip_tutorial(dev):

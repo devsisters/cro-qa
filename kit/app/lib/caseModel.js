@@ -68,6 +68,7 @@ function validateCase(c) {
   }
   if (!['latest', 'oldest'].includes(c.target || 'latest')) errs.push(`${where}: target 은 latest 또는 oldest`);
   if (c.timeoutSec !== undefined && (!Number.isInteger(c.timeoutSec) || c.timeoutSec < 30)) errs.push(`${where}: timeoutSec 는 30 이상 정수`);
+  if (c.stopAfterSec !== undefined && c.stopAfterSec !== null && (typeof c.stopAfterSec !== 'number' || c.stopAfterSec < 0)) errs.push(`${where}: stopAfterSec(되감기 다 하면 그만두기)는 0 이상`);
   const inp = c.input;
   if (inp !== undefined && inp !== null) {
     if (typeof inp !== 'object' || !['random', 'smart', 'none', 'record', 'replay'].includes(inp.mode || 'random')) errs.push(`${where}: input.mode 는 random · smart · none · record · replay 중 하나`);
@@ -101,7 +102,7 @@ function validateSuite(suite) {
 /** 프리셋(input·plays·timeoutSec·target)을 케이스에 덮어쓴다. 맵·카드·트리거는 건드리지 않는다. */
 function applyPreset(c, preset) {
   const out = JSON.parse(JSON.stringify(c));
-  for (const key of ['plays', 'timeoutSec', 'target']) if (preset[key] !== undefined) out[key] = preset[key];
+  for (const key of ['plays', 'timeoutSec', 'stopAfterSec', 'target']) if (preset[key] !== undefined) out[key] = preset[key];
   if (preset.input) out.input = JSON.parse(JSON.stringify(preset.input));
   return out;
 }
@@ -110,7 +111,7 @@ function presetFromCase(c) {
   // 시드는 케이스마다 정하는 값이라 프리셋에 넣지 않는다
   const input = JSON.parse(JSON.stringify(c.input || { mode: 'none' }));
   delete input.seed;
-  return { input, plays: c.plays, timeoutSec: c.timeoutSec, target: c.target || 'latest' };
+  return { input, plays: c.plays, timeoutSec: c.timeoutSec, stopAfterSec: c.stopAfterSec, target: c.target || 'latest' };
 }
 
 /** Claude 응답에서 첫 JSON 객체를 꺼낸다(코드 블록·앞뒤 설명 허용). */

@@ -9,7 +9,7 @@ const call = (channel) => async (...args) => {
 };
 
 const channels = [
-  'kit:info', 'cases:list', 'cases:read', 'cases:write', 'cases:check', 'runs:list', 'runs:read', 'runs:open', 'runs:openFile', 'runs:menu',
+  'kit:info', 'cases:list', 'cases:read', 'cases:write', 'cases:check', 'runs:list', 'runs:read', 'runs:open', 'runs:openFile', 'runs:reveal', 'runs:menu', 'cases:delete', 'cases:authors', 'gh:login', 'presets:server',
   'presets:read', 'presets:write', 'devices:read', 'devices:write', 'devices:discover', 'settings:write',
   'device:launch', 'device:ping', 'setup:check', 'setup:action', 'scenario:status', 'scenario:connect', 'scenario:pull', 'scenario:fetch', 'app:restart', 'scenario:push', 'scenario:open', 'device:scene', 'device:maps', 'device:cards', 'run:start', 'run:stop', 'run:active',
   'claude:summary', 'claude:diagnose', 'claude:caseDraft', 'claude:chat', 'claude:stop',

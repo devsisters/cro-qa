@@ -208,4 +208,44 @@ async function push(message) {
   return status();
 }
 
-module.exports = { status, connect, pull, push, fetch, kitRepoDir, kitPathIn, parseStatus, normalizeRemote, defaultDir, teamRepo };
+function gh(args, { timeout = 30000 } = {}) {
+  return new Promise((resolve) => {
+    execFile('gh', args, { env: Object.assign(kit.toolEnv(), { GH_PROMPT_DISABLED: '1' }), timeout }, (err, stdout) => {
+      resolve(err ? '' : String(stdout || '').trim());
+    });
+  });
+}
+
+let myLogin = null;
+/** 이 컴퓨터에 gh 로 로그인한 GitHub 아이디. 로그인 안 했으면 빈 문자열 */
+async function ghLogin() {
+  if (!myLogin) myLogin = await gh(['api', 'user', '--jq', '.login']);
+  return myLogin;
+}
+
+const loginBySha = new Map();
+/** 묶음마다 만든 사람의 GitHub 아이디. 파일의 createdBy 가 먼저고, 없으면 그 파일을 처음 올린 커밋의 작성자.
+ *  아직 올리지 않은 파일은 null. 올렸지만 GitHub 아이디를 못 찾으면 커밋의 git 이름을 쓴다. */
+async function suiteAuthors(files) {
+  let dir = null;
+  try { dir = root(); } catch (_) { /* 팀 저장소가 없으면 파일에 적힌 것만 */ }
+  const repo = teamRepo().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '');
+  const out = {};
+  for (const f of files) {
+    let suite = null;
+    try { suite = kit.readCase(f); } catch (_) { /* 깨진 파일 */ }
+    if (suite && typeof suite.createdBy === 'string' && suite.createdBy) { out[f] = suite.createdBy; continue; }
+    out[f] = null;
+    if (!dir) continue;
+    const rel = path.relative(dir, path.join(kit.casesDir(), f)).split(path.sep).join('/');
+    const r = await git(dir, ['log', '--diff-filter=A', '--format=%H%x09%an', '--', rel]);
+    const first = r.out.trim().split('\n').filter(Boolean).pop();
+    if (!first) continue;
+    const [sha, name] = first.split('\t');
+    if (!loginBySha.has(sha)) loginBySha.set(sha, await gh(['api', `repos/${repo}/commits/${sha}`, '--jq', '.author.login // ""']));
+    out[f] = loginBySha.get(sha) || name || null;
+  }
+  return out;
+}
+
+module.exports = { status, connect, pull, push, fetch, kitRepoDir, kitPathIn, parseStatus, normalizeRemote, defaultDir, teamRepo, ghLogin, suiteAuthors };
