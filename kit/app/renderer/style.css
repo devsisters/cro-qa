@@ -350,3 +350,12 @@ table.tc tr.tc-row.sel td { background: var(--focus); }
 .og-detail figure img { max-width: 130px; max-height: 80px; border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; display: block; }
 .og-detail figcaption { font-size: 11px; color: var(--muted); }
 .sc-n { font-size: 11px; }
+
+.chat .denials { border: 1px solid color-mix(in srgb, var(--warn) 60%, var(--line)); background: color-mix(in srgb, var(--panel) 90%, var(--warn) 10%); border-radius: var(--radius); padding: 10px 12px; margin: 8px 0; }
+.chat .denials ul { margin: 6px 0; padding-left: 18px; }
+.chat .denials code { white-space: pre-wrap; word-break: break-all; }
+.chat .denials .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.og-detail .sc-checks { margin: 0 0 4px; padding-left: 16px; }
+.og-detail .sc-fail { color: var(--danger); font-size: 11px; }
+.og-detail .sc-human { color: var(--unsure); margin: 2px 0; }
+.og-detail .sc-confirm { font-size: 11px; padding: 1px 8px; margin-top: 2px; }

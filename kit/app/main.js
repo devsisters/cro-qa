@@ -237,6 +237,21 @@ handle('scenarios:read', (file) => {
   return readJsonFile(target, null);
 });
 handle('scenarios:dir', () => repoPath('scenarios'));
+// 채점 조건 확정 — 사람이 조건을 보고 맞다고 한 지점만 실행에서 채점에 쓴다
+handle('scenarios:confirm', async (file, name) => {
+  const root = repoPath('scenarios');
+  const target = path.resolve(root, String(file || ''));
+  if (!target.startsWith(root + path.sep) || !target.endsWith('.json')) throw new Error('시나리오 폴더 안의 파일이 아니다');
+  const data = readJsonFile(target, null);
+  const entry = data && (data.scoring || []).find((x) => x.name === name);
+  if (!entry) throw new Error(`채점표에 「${name}」 지점이 없다`);
+  entry.confirmed = true;
+  entry.confirmedBy = await scen.ghLogin().catch(() => '') || '앱';
+  entry.confirmedAt = new Date().toISOString().slice(0, 19);
+  data.updatedAt = entry.confirmedAt;
+  fs.writeFileSync(target, JSON.stringify(data, null, 1) + '\n');
+  return entry;
+});
 handle('external:open', (url) => {
   if (!/^https:\/\/docs\.google\.com\//.test(String(url))) throw new Error('구글 문서 주소만 연다');
   return shell.openExternal(url);
@@ -422,11 +437,12 @@ handle('claude:caseDraft', async (request, current) => {
   const draft = model.normalizeCase(model.extractJsonObject(r.text));
   return { draft, errors: model.validateCase(draft), cost: r.cost };
 });
-handle('claude:chat', (chatId, message, sessionId) => {
+handle('claude:chat', (chatId, message, sessionId, extraAllow) => {
   if (chats.has(chatId)) throw new Error('이전 답을 기다리는 중이다');
   const child = claude.chat(message, sessionId,
     (text) => send('claude:chunk', { chatId, text }),
-    (result) => { chats.delete(chatId); send('claude:done', Object.assign({ chatId }, result)); });
+    (result) => { chats.delete(chatId); send('claude:done', Object.assign({ chatId }, result)); },
+    Array.isArray(extraAllow) ? extraAllow.filter((r) => typeof r === 'string') : []);
   chats.set(chatId, child);
   return true;
 });

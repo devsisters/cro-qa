@@ -151,6 +151,8 @@ function writeSettings(settings) {
   const allowed = {};
   for (const key of ['python', 'claude', 'developerDir', 'scenarioDir', 'scenarioRepo', 'serverPreset']) if (typeof settings[key] === 'string') allowed[key] = settings[key].trim();
   if (allowed.scenarioDir && !path.isAbsolute(allowed.scenarioDir)) throw new Error('시나리오 폴더는 전체 경로여야 한다');
+  // 앱 안 Claude 에 사람이 「항상 허용」한 도구 규칙(이 컴퓨터에만)
+  if (Array.isArray(settings.chatAllow)) allowed.chatAllow = settings.chatAllow.filter((r) => typeof r === 'string' && r.length < 400);
   writeJson(P.settings, Object.assign(readSettings(), allowed));
   return readSettings();
 }

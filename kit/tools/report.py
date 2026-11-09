@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import qa_common as qc  # noqa: E402
 
-LABEL = {'PASS': '통과', 'FAIL': '실패', 'REVIEW': '확인 필요', 'UNSURE': '확인 필요', 'ERROR': '진행 실패',
+LABEL = {'PASS': '통과', 'FAIL': '실패', 'REVIEW': '확인 필요', 'UNSURE': '확인 필요', 'HUMAN': '사람 확인', 'ERROR': '진행 실패',
          'NOT_RUN': '미실행'}
 
 
@@ -56,6 +56,8 @@ def note_for(c):
             notes.append(f'{cp["name"]}: 판정 {j["verdict"]}/{j["category"]} — {j["reason"]}')
         if cp.get('verdict') == 'REVIEW':
             notes.append(f'{cp["name"]}: 정답지와 차이 — 판정 전')
+        if cp.get('verdict') == 'HUMAN':
+            notes.append(f'{cp["name"]}: 사람 확인 — {cp.get("human") or ""}')
     return ' / '.join(notes)
 
 
@@ -206,6 +208,7 @@ def build(run_dirs, out):
 
     section('실패 — 기대와 다름(결함 의심)', lambda c: c['verdict'] == 'FAIL')
     section('확인 필요 — 정답지와 차이, 판정 미완 또는 불확실', lambda c: c['verdict'] in ('REVIEW', 'UNSURE'))
+    section('사람 확인 — 조건은 통과, 캡처를 보고 판단', lambda c: c['verdict'] == 'HUMAN')
     section('진행 실패 — 화면 이동·연결', lambda c: c['verdict'] == 'ERROR')
     section('캡처 못 가져옴 — 판정은 위와 같고 화면 비교가 빠졌다',
             lambda c: c['verdict'] in ('PASS', 'NOT_RUN') and any(cp.get('shotError') for cp in c.get('checkpoints', [])))

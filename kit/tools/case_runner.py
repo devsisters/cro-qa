@@ -346,6 +346,17 @@ class Runner:
         if not all(c['ok'] for c in cp['checks']):
             cp['verdict'] = 'FAIL'
             return cp
+        # 시나리오 채점표 지점(scenario_run 이 붙인다): 채점은 조건(expect)으로 하고, 화면 비교는 켠 지점만 한다
+        if s.get('scoring'):
+            sc = s['scoring']
+            if not sc.get('compareImage'):
+                cp['baseline'] = 'off'
+                cp['verdict'] = 'PASS'
+                if sc.get('unconfirmed'):
+                    cp['verdict'], cp['human'] = 'HUMAN', '채점 조건이 아직 확정되지 않았다 — 캡처를 보고 판단하고 조건을 확정한다'
+                elif sc.get('human'):
+                    cp['verdict'], cp['human'] = 'HUMAN', sc['human']
+                return cp
         # 시나리오(scenarios/<탭>/<키>.json)는 채점표 정답을 저장소의 scenarios/<탭>/<키>/<플랫폼>/ 에 둔다
         base = os.path.join(case['answersDir'], self.platform) if case.get('answersDir') \
             else os.path.join(qc.ANSWERS, self.suite_name, self.platform, case['id'])
@@ -357,8 +368,17 @@ class Runner:
         cp['baseline'] = base
         ref = qc.load_json(bjson)
         diff = {}
-        missing = sorted(set(ref.get('texts', [])) - set(dump['texts']))
-        added = sorted(set(dump['texts']) - set(ref.get('texts', [])))
+        # 정답에 저장된 바뀌는 영역(maskSelectors, 채점표 mask)과 단계의 mask 를 함께 적용한다 — 그 영역의 글자·그림은 비교하지 않는다.
+        # maskSelectors 가 없는 예전 정답은 글자에 mask 영역이 들어 있으므로 예전처럼 글자 전체를 비교한다
+        selectors = list(s.get('mask', []))
+        selectors += [m for m in ref.get('maskSelectors', []) if m not in selectors]
+        if 'maskSelectors' in ref:
+            texts, cur_masks = qc.text_signature(nodes, selectors), qc.dynamic_masks(nodes, selectors)
+        else:
+            texts, cur_masks = dump['texts'], dump['masks']
+        ref_texts = set(ref.get('texts', []))
+        missing = sorted(ref_texts - set(texts))
+        added = sorted(set(texts) - ref_texts)
         if missing or added:
             diff['texts'] = {'missing': missing[:30], 'added': added[:30]}
         if shot and os.path.exists(bpng) and s.get('image', True):
@@ -367,7 +387,7 @@ class Runner:
             if g and g.get('visibleSize') and size:
                 # 그려진 글자가 노드 영역보다 조금 넓다(외곽선·그림자) — 게임 좌표로 MASK_PAD 만큼 넓혀 뺀다
                 masks = [qc.to_pixels([x - MASK_PAD, y - MASK_PAD, w + 2 * MASK_PAD, h + 2 * MASK_PAD], g, size)
-                         for x, y, w, h in ref.get('masks', []) + dump['masks']]
+                         for x, y, w, h in ref.get('masks', []) + cur_masks]
             img = imgdiff.compare(bpng, shot, masks)
             area = img['size'][0] * img['size'][1]
             sig = [r for r in img['regions'] if r[2] * r[3] >= area * SIG_AREA]
@@ -453,7 +473,7 @@ def main():
     import judge
     req = judge.prepare(out)
     verdicts = [c['verdict'] for c in results['cases']]
-    code = 3 if 'ERROR' in verdicts else 1 if ('FAIL' in verdicts or 'REVIEW' in verdicts) else 0
+    code = 3 if 'ERROR' in verdicts else 1 if ('FAIL' in verdicts or 'REVIEW' in verdicts or 'HUMAN' in verdicts) else 0
     print(json.dumps({'ok': code == 0, 'exit': code, 'results': os.path.join(out, 'results.json'),
                       'judgeRequest': req, 'counts': {v: verdicts.count(v) for v in sorted(set(verdicts))}},
                      ensure_ascii=False))

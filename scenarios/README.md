@@ -30,8 +30,13 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
   "steps": [ … ]
  },
  "scoring": [
-  {"name": "episode-select", "label": "에피소드 선택 화면이 열린다", "values": [{"label": "골드", "value": "100"}],
-   "mask": [], "platforms": {"aos": {"at": "2026-11-09T16:42:00", "by": "담당자"}}}
+  {"name": "episode-select", "label": "에피소드 선택 화면이 열린다",
+   "expect": {"scene": "SceneOvenBreakEpisode", "tappable": [{"inst": "_btnStart"}], "count": [{"owner": "CellEpisode", "min": 1}],
+              "text": [{"select": {"inst": "_labelGold"}, "contains": "100"}]},
+   "confirmed": true, "confirmedBy": "담당자", "confirmedAt": "2026-11-09T16:50:00",
+   "human": false, "humanNote": "", "compareImage": false,
+   "values": [{"label": "골드", "value": "100"}], "mask": [{"owner": "CellEpisode"}],
+   "platforms": {"aos": {"at": "2026-11-09T16:42:00", "by": "담당자"}}}
  ],
  "notes": [
   {"at": "2026-11-09", "by": "담당자", "text": "교정·유의사항 — 사람이 말한 그대로"}
@@ -46,10 +51,13 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
 - `case` 는 케이스 한 개와 같은 모양이다. 단계 종류·선택자·판정은 `kit/cases/README.md` 의 「단계」 절을 따른다.
 - `notes` 는 지우지 않고 쌓는다. 다음에 고칠 때 먼저 읽는다.
 - `scoring`(채점표)은 채점할 지점의 목록이다. 시나리오를 만드는 중 사람이 「여기 캡처해」라고 한 지점이다.
-  - 지점마다 그때 화면이 정답으로 저장된다: `scenarios/<탭>/<키>/<플랫폼>/<지점>.png` · `.json`
-  - `values` 는 사람이 말한 숫자·값이다(예: 골드 = 100). 트리로 확인할 수 있으면 그 지점 checkpoint 의 `expect` 에도 넣는다.
+  - **채점은 조건(`expect`)으로 한다.** 조건은 게임이 주는 화면 정보다: 화면 이름, 보이는·누를 수 있는 버튼, 목록 개수, 값. 실행 때마다 기계가 같은 기준으로 판정한다.
+  - **캡처는 참고 그림이다**: `scenarios/<탭>/<키>/<플랫폼>/<지점>.png`. 조건을 정한 근거이자 사람이 볼 기준이다. `compareImage: true` 인 지점만 화면 비교도 한다(레이아웃 확인용).
+  - 조건은 Claude 가 초안을 만들고 **사람이 확정한다**(`confirmed`). 사람의 유의사항은 이때 조건과 `mask`(달라도 되는 영역)로 옮긴다. 실행 때마다 Claude 가 판단하지 않는다.
+  - 확정 전 지점은 실행에서 **HUMAN(사람 확인)** 으로 나온다.
+  - 조건으로 옮길 수 없는 것(연출·그림이 맞는지)은 `human: true` + `humanNote` 로 둔다. 조건이 통과해도 HUMAN 으로 남겨 사람이 캡처를 본다.
+  - `values` 는 사람이 말한 숫자·값이다(예: 골드 = 100). 조건의 `text` 로도 들어간다.
   - `case.steps` 에 같은 이름의 `checkpoint` 단계가 있어야 다음 실행에서 채점된다.
-  - 채점은 정답지 비교와 같다. 글자 목록과 화면을 정답과 비교하고, 숫자가 든 글자와 `mask` 영역은 비교에서 뺀다. 차이가 있으면 REVIEW 로 사람이 본다.
 - `lastRun` 은 `scenario_run.py` 가 돌린 뒤 적는다(지점별 판정·실행 캡처 경로).
 
 「여기 캡처해」 — 기기가 그 화면에 와 있을 때:
@@ -57,10 +65,12 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
 ```bash
 cd kit
 python3 tools/scenario_capture.py ../scenarios/<탭>/<키>.json --platform aos --name <지점> --by <말한 사람> \
-        --label "무엇을 보는 지점인지" [--value "골드=100"] [--mask '{"inst": "_labelTime"}']
+        --label "무엇을 보는 지점인지" [--value "골드=100"] [--mask '{"owner": "CellCookieListCard"}'] \
+        [--expect '<조건 JSON>'] [--human "사람이 캡처로 볼 것"] [--compare-image]
+python3 tools/scenario_capture.py ../scenarios/<탭>/<키>.json --name <지점> --confirm --by <확정한 사람>
 ```
 
-이 도구는 채점표와 정답만 만든다. 같은 자리에 `{"do": "checkpoint", "name": "<지점>"}` 단계를 넣는 것은 Claude 가 한다.
+이 도구는 조건 초안과 참고 그림을 만든다. 출력의 조건을 사람에게 보여 주고 확인받는다. 맞으면 앱의 「조건 확정」이나 `--confirm` 으로 확정하고, 다르면 `--expect` 로 고친다. 같은 자리에 `{"do": "checkpoint", "name": "<지점>"}` 단계를 넣는 것은 Claude 가 한다.
 
 돌리기:
 

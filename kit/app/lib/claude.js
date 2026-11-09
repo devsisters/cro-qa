@@ -7,7 +7,23 @@ const kit = require('./kit');
 
 const READ_ONLY = ['Read', 'Glob', 'Grep'];
 // 대화에서는 케이스 편집과 키트 도구 실행까지 허용한다. 키트 폴더 밖 명령은 허용 목록에 없다
-const CHAT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash(python3 tools/*)', 'Bash(git *)'];
+const CHAT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash(python3 tools/*)', 'Bash(git *)', 'Bash(python3 -m unittest:*)',
+  `Bash(python3 ${kit.P.kit}/tools/*)`]; // 키트 도구를 전체 경로로 불러도 같은 허용으로 본다
+
+/** 거절된 도구 호출 → 허용 규칙. 「이번만」은 그 명령 그대로, 「항상」은 같은 도구(예: python3 tools/x.py)의 모든 인자 */
+function ruleFor(denial, always) {
+  const name = denial.tool_name || '';
+  const input = denial.tool_input || {};
+  if (name === 'Bash' && input.command) {
+    const cmd = String(input.command).trim();
+    if (!always) return `Bash(${cmd})`;
+    const words = cmd.split(/\s+/);
+    const head = /^(python3?|node|npm|bash|sh)$/.test(words[0]) && words[1] ? `${words[0]} ${words[1]}` : words[0];
+    return `Bash(${head}:*)`;
+  }
+  if ((name === 'Edit' || name === 'Write') && input.file_path) return `${name}(${input.file_path})`;
+  return name;
+}
 
 /** 시나리오 폴더를 정했으면 Claude 가 그 폴더도 보고 고칠 수 있게 한다. */
 function scenarioArgs() {
@@ -48,8 +64,10 @@ function ask(prompt, { tools = READ_ONLY, timeoutMs = 300000 } = {}) {
 }
 
 /** 대화 한 턴. stream-json 을 읽어 글자 조각을 onText 로 넘긴다. sessionId 가 있으면 이어간다. */
-function chat(message, sessionId, onText, onDone) {
-  const args = ['-p', message, '--output-format', 'stream-json', '--verbose', '--allowedTools', CHAT_TOOLS.join(','), ...scenarioArgs()];
+function chat(message, sessionId, onText, onDone, extraAllow = []) {
+  // 허용: 기본 + 사람이 「항상 허용」한 것(앱 설정) + 이번 대화에서 허용한 것
+  const allow = [...new Set([...CHAT_TOOLS, ...(kit.readSettings().chatAllow || []), ...extraAllow])];
+  const args = ['-p', message, '--output-format', 'stream-json', '--verbose', '--allowedTools', allow.join(','), ...scenarioArgs()];
   if (sessionId) args.push('--resume', sessionId);
   const child = spawn(claudeCommand(), args, { cwd: kit.P.kit, env: kit.toolEnv() });
   let buffer = '';
@@ -76,7 +94,15 @@ function chat(message, sessionId, onText, onDone) {
           else if (part.type === 'tool_use') onText(`\n\`[도구] ${part.name}\`\n`);
         }
       } else if (ev.type === 'result') {
-        finish({ ok: !ev.is_error, sessionId: newSession, cost: ev.total_cost_usd, error: ev.is_error ? String(ev.result) : '' });
+        // 허용 목록에 없어 거절된 도구 호출 — 앱이 사람에게 보여 주고 허용하면 이어서 다시 하게 한다
+        const seen = new Set();
+        const denials = (ev.permission_denials || []).filter((d) => {
+          const k = JSON.stringify([d.tool_name, d.tool_input]);
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        }).map((d) => ({ tool: d.tool_name, input: d.tool_input, once: ruleFor(d, false), always: ruleFor(d, true) }));
+        finish({ ok: !ev.is_error, sessionId: newSession, cost: ev.total_cost_usd, error: ev.is_error ? String(ev.result) : '', denials });
       }
     }
   });
@@ -120,4 +146,4 @@ function caseDraftPrompt(request, current) {
   ].join('\n');
 }
 
-module.exports = { ask, chat, summaryPrompt, diagnosePrompt, caseDraftPrompt, READ_ONLY, CHAT_TOOLS };
+module.exports = { ask, chat, summaryPrompt, diagnosePrompt, caseDraftPrompt, READ_ONLY, CHAT_TOOLS, ruleFor };

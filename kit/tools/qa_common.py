@@ -14,7 +14,7 @@ PLATFORMS = ('ios', 'aos', 'mac')
 DIGIT = re.compile(r'\d')
 
 # 판정 값 — 나쁜 순서(케이스 판정은 체크포인트 중 가장 나쁜 것)
-ORDER = ['ERROR', 'FAIL', 'REVIEW', 'UNSURE', 'PASS', 'NOT_RUN']
+ORDER = ['ERROR', 'FAIL', 'REVIEW', 'UNSURE', 'HUMAN', 'PASS', 'NOT_RUN']  # HUMAN: 조건은 통과, 캡처를 사람이 볼 지점
 
 
 def worst(verdicts):
@@ -143,12 +143,16 @@ def to_pixels(rect, geometry, image_size):
     return [round(ox + (x - vx) * s), round(oy + (vh - (y - vy) - h) * s), round(w * s), round(h * s)]
 
 
-def text_signature(nodes):
-    """정답지와 비교할 글자 목록. 숫자가 든 글자(재화·시간·MID·개수)는 데이터라서 뺀다."""
+def text_signature(nodes, exclude_selectors=()):
+    """정답지와 비교할 글자 목록. 숫자가 든 글자(재화·시간·MID·개수)는 데이터라서 뺀다.
+    exclude_selectors(바뀌는 영역 mask)에 걸리는 노드의 글자도 뺀다 — 목록 내용이 달라도 되는 영역이다."""
+    skip = set()
+    for sel in exclude_selectors:
+        skip.update(id(n) for n in select(nodes, sel))
     out = set()
     for n in nodes:
         t = n.get('text')
-        if t and not DIGIT.search(t):
+        if t and not DIGIT.search(t) and id(n) not in skip:
             out.add(f'{n.get("owner") or "-"} | {t}')
     return sorted(out)
 

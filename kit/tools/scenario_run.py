@@ -21,6 +21,29 @@ sys.path.insert(0, HERE)
 import qa_common as qc  # noqa: E402
 
 
+def apply_scoring(steps, scoring):
+    """채점표를 같은 이름의 checkpoint 단계에 붙인다. 확정된 조건만 expect 에 더하고, 확정 전·사람 확인 지점은 표시만 한다."""
+    by_name = {p.get('name'): p for p in scoring}
+    out = []
+    for s in steps:
+        p = by_name.get(s.get('name')) if s.get('do') == 'checkpoint' else None
+        if p:
+            s = dict(s)
+            if p.get('confirmed'):
+                exp = dict(s.get('expect') or {})
+                for k, v in (p.get('expect') or {}).items():
+                    if isinstance(v, list):
+                        exp[k] = list(exp.get(k) or []) + [x for x in v if x not in (exp.get(k) or [])]
+                    else:
+                        exp[k] = v
+                s['expect'] = exp
+            s['mask'] = list(s.get('mask') or []) + [m for m in p.get('mask') or [] if m not in (s.get('mask') or [])]
+            s['scoring'] = {'compareImage': bool(p.get('compareImage')), 'unconfirmed': not p.get('confirmed'),
+                            'human': (p.get('humanNote') or p.get('label') or '사람이 캡처를 보고 판단') if p.get('human') else ''}
+        out.append(s)
+    return out
+
+
 def build_suite(files):
     cases, server, time_ok = [], '', False
     for path in files:
@@ -28,6 +51,7 @@ def build_suite(files):
         case = dict(data.get('case') or {})
         case['id'] = data.get('key') or os.path.splitext(os.path.basename(path))[0]
         case['answersDir'] = os.path.splitext(os.path.abspath(path))[0]
+        case['steps'] = apply_scoring(case.get('steps') or [], data.get('scoring') or [])
         tc = data.get('tc') or {}
         path_text = ' / '.join(v for v in (tc.get('main'), tc.get('sub1'), tc.get('sub2'), tc.get('sub3')) if v)
         case.setdefault('title', f'{data.get("tab", "")} No.{data.get("no", "")} {path_text}'.strip())
@@ -81,7 +105,9 @@ def record_last_run(files, platform, out):
         data['lastRun'] = {
             'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'platform': platform, 'verdict': c.get('verdict'),
             'reason': c.get('reason', ''), 'run': os.path.relpath(out, qc.KIT),
-            'checkpoints': {cp['name']: {'verdict': cp.get('verdict'), 'shot': os.path.relpath(cp['shot'], qc.KIT) if cp.get('shot') else None}
+            'checkpoints': {cp['name']: {'verdict': cp.get('verdict'), 'shot': os.path.relpath(cp['shot'], qc.KIT) if cp.get('shot') else None,
+                                         'failed': [x['check'] + f' ({x["detail"]})' for x in cp.get('checks', []) if not x['ok']],
+                                         'human': cp.get('human', '')}
                             for cp in c.get('checkpoints', [])}}
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=1)

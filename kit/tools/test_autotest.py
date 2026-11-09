@@ -168,6 +168,10 @@ class TestGeometry(unittest.TestCase):
         sig = qc.text_signature([{'text': '확인'}, {'text': '39일 11:22'}, {'text': 'MID : AB1'}, {'owner': 'P', 'text': '닫기'}])
         self.assertEqual(sig, ['- | 확인', 'P | 닫기'])
 
+    def test_signature_skips_masked(self):
+        nodes = [{'owner': 'Card', 'text': '용감한 쿠키'}, {'owner': 'P', 'text': '닫기'}]
+        self.assertEqual(qc.text_signature(nodes, [{'owner': 'Card'}]), ['P | 닫기'])
+
 
 class TestImageDiff(Base):
     def test_same_and_changed(self):

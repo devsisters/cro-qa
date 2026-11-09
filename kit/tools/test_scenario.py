@@ -41,5 +41,59 @@ class ScenarioTest(unittest.TestCase):
             self.assertEqual((last['verdict'], last['platform'], last['checkpoints']['p1']['verdict']), ('PASS', 'aos', 'PASS'))
 
 
+class ConditionScoringTest(unittest.TestCase):
+    def test_draft_expect_from_screen(self):
+        nodes = [{'owner': 'PopInv', 'inst': '_btnClose', 'receiver': 'button'},
+                 {'owner': 'PopInv', 'inst': '_labelTitle', 'text': '인벤토리'},
+                 {'owner': 'Card', 'inst': '_labelName', 'text': '용감한 쿠키'},
+                 {'owner': 'PopInv', 'inst': '_labelGold', 'text': '골드 100'}]
+        exp = scenario_capture.draft_expect('PopInv', nodes, [{'owner': 'Card'}], ['골드=100'])
+        self.assertEqual(exp['scene'], 'PopInv')
+        self.assertEqual(exp['tappable'], [{'owner': 'PopInv', 'inst': '_btnClose'}])
+        self.assertEqual(exp['present'], [{'owner': 'PopInv', 'inst': '_labelTitle', 'text': '인벤토리'}], 'mask 영역·숫자 글자는 조건에 넣지 않는다')
+        self.assertEqual(exp['count'], [{'owner': 'Card', 'min': 1}])
+        self.assertEqual(exp['text'], [{'select': {'owner': 'PopInv', 'inst': '_labelGold'}, 'contains': '100'}])
+
+    def test_new_condition_needs_confirm_and_only_confirmed_is_scored(self):
+        data = {'case': {'steps': [{'do': 'checkpoint', 'name': 'inv'}]}}
+        scenario_capture.upsert_scoring(data, 'inv', 'aos', 'QA', expect={'scene': 'PopInv'}, when='t')
+        steps = scenario_run.apply_scoring(data['case']['steps'], data['scoring'])
+        self.assertNotIn('expect', steps[0], '확정 전 조건은 채점에 쓰지 않는다')
+        self.assertTrue(steps[0]['scoring']['unconfirmed'])
+        self.assertTrue(scenario_capture.confirm(data, 'inv', '담당자', when='t2'))
+        steps = scenario_run.apply_scoring(data['case']['steps'], data['scoring'])
+        self.assertEqual(steps[0]['expect'], {'scene': 'PopInv'})
+        self.assertFalse(steps[0]['scoring']['unconfirmed'])
+        scenario_capture.upsert_scoring(data, 'inv', 'ios', 'QA', expect={'scene': 'PopInv2'}, when='t3')
+        self.assertFalse(data['scoring'][0]['confirmed'], '조건이 바뀌면 다시 확정 전')
+        scenario_capture.upsert_scoring(data, 'inv', 'ios', 'QA', human='연출이 자연스러운지', when='t4')
+        self.assertEqual(scenario_run.apply_scoring(data['case']['steps'], data['scoring'])[0]['scoring']['human'], '연출이 자연스러운지')
+
+    def test_runner_marks_human_and_unconfirmed_points(self):
+        import case_runner
+
+        class Dev:
+            out_dir = tempfile.mkdtemp()
+            def tree(self): return {'nodes': [{'inst': '_btnClose', 'receiver': 'button', 'rect': [0, 0, 10, 10]}]}
+            def scene(self): return 'PopInv'
+            def call(self, *a): return {'result': {}}
+            def shot(self, name): return None
+        r = case_runner.Runner.__new__(case_runner.Runner)
+        r.dev, r.platform, r.suite_name = Dev(), 'aos', 'scenario'
+        case = {'id': 'k', 'answersDir': '/nonexistent'}
+        cp = r.checkpoint(case, {'do': 'checkpoint', 'name': 'p', 'image': False, 'expect': {'scene': 'PopInv'},
+                                 'scoring': {'compareImage': False, 'unconfirmed': False, 'human': ''}})
+        self.assertEqual(cp['verdict'], 'PASS')
+        cp = r.checkpoint(case, {'do': 'checkpoint', 'name': 'p', 'image': False,
+                                 'scoring': {'compareImage': False, 'unconfirmed': False, 'human': '그림 확인'}})
+        self.assertEqual((cp['verdict'], cp['human']), ('HUMAN', '그림 확인'))
+        cp = r.checkpoint(case, {'do': 'checkpoint', 'name': 'p', 'image': False,
+                                 'scoring': {'compareImage': False, 'unconfirmed': True, 'human': ''}})
+        self.assertEqual(cp['verdict'], 'HUMAN')
+        cp = r.checkpoint(case, {'do': 'checkpoint', 'name': 'p', 'image': False, 'expect': {'scene': 'Other'},
+                                 'scoring': {'compareImage': False, 'unconfirmed': False, 'human': '그림 확인'}})
+        self.assertEqual(cp['verdict'], 'FAIL', '조건이 틀리면 사람 확인보다 실패가 먼저다')
+
+
 if __name__ == '__main__':
     unittest.main()
