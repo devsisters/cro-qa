@@ -9,9 +9,24 @@ test('케이스·실행 폴더 이름으로 키트 밖 경로를 열 수 없다'
 });
 
 test('케이스 목록은 되감기와 아웃게임을 구분한다', () => {
-  const list = kit.listCases();
-  assert.ok(list.some((x) => x.file === 'sample-rewind.json' && x.kind === 'rewind'));
-  assert.ok(list.some((x) => x.kind === 'outgame'));
+  // 팀 저장소의 묶음은 바뀌므로 임시 시나리오 폴더로 본다
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-cases-'));
+  fs.mkdirSync(path.join(dir, 'cases'));
+  fs.writeFileSync(path.join(dir, 'cases', 'rw.json'), JSON.stringify({ kind: 'rewind', cases: [{}] }));
+  fs.writeFileSync(path.join(dir, 'cases', 'og.json'), JSON.stringify({ suite: 'og', cases: [{}, {}] }));
+  const real = kit.readSettings;
+  kit.readSettings = () => Object.assign(real(), { scenarioDir: dir });
+  try {
+    const list = kit.listCases();
+    assert.ok(list.some((x) => x.file === 'rw.json' && x.kind === 'rewind'));
+    assert.ok(list.some((x) => x.file === 'og.json' && x.kind === 'outgame' && x.count === 2));
+  } finally {
+    kit.readSettings = real;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('설정은 정해진 키만 받는다', () => {

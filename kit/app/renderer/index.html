@@ -8,7 +8,7 @@
 </head>
 <body>
   <nav id="tabs" role="tablist">
-    <button data-tab="setup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12.5 9 17.5 20 6.5"/></svg>준비<span id="setupBadge"></span><span id="updateDot" class="update-dot" hidden></span></button>
+    <button data-tab="setup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12.5 9 17.5 20 6.5"/></svg>준비<span id="setupBadge"></span></button>
     <button data-tab="devices" role="tab" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg>기기</button>
     <button data-tab="rewind" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>되감기</button>
     <button data-tab="outgame" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>아웃게임</button>
@@ -20,7 +20,7 @@
   <div id="scenBar" class="scenbar">
     <span class="label">팀 시나리오</span> <strong id="scenWhere"></strong> <span id="scenState" class="muted"></span>
     <span id="appUpdate" class="app-update" hidden>앱 새 버전을 받았습니다 <button id="appRestart" class="primary">다시 시작</button></span>
-    <button id="scenPull">최신 받기</button><button id="scenPush">변경 공유</button><button id="scenOpen">폴더 열기</button>
+    <button id="scenPull" class="has-dot">최신 받기<span id="updateDot" class="update-dot" hidden></span></button><button id="scenPush">변경 공유</button><button id="scenOpen">폴더 열기</button>
     <span id="scenMsg" class="muted"></span>
   </div>
 
@@ -163,13 +163,25 @@
 
     <!-- 아웃게임 -->
     <section id="tab-outgame" class="tab">
+      <div class="card sheet-import">
+        <h2>테스트 시트로 묶음 만들기</h2>
+        <div class="sheet-row">
+          <label class="grow">시트 링크<input id="ogSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=… (테스트할 탭을 연 상태의 주소)"></label>
+          <label>묶음 이름<input id="ogSheetSuite" placeholder="v127-basic"></label>
+          <button id="ogSheetImport" class="primary">시트로 만들기</button>
+          <button id="ogSheetCsv" title="브라우저로 받은 CSV 파일을 직접 고른다">CSV 파일로</button>
+        </div>
+        <p id="ogSheetStatus" class="muted">링크에 있는 탭(gid)을 읽는다. 회사 계정 전용 시트면 평소 브라우저가 CSV 를 내려받고, 앱이 다운로드 폴더에서 그 파일을 가져온다.</p>
+      </div>
       <div class="toolbar">
         <label>묶음 <select id="ogSuite"></select></label>
+        <button id="ogSheetOpen" hidden>시트 열기</button>
         <label><input id="ogOnlyAuto" type="checkbox" checked> 자동화 가능한 것만</label>
         <button id="ogAll">모두 선택</button><button id="ogNone">모두 해제</button>
         <span id="ogStatus" class="muted"></span>
       </div>
       <table class="grid" id="ogTable"><thead><tr><th></th><th>id</th><th>제목</th><th>구분</th><th>단계</th></tr></thead><tbody></tbody></table>
+      <p id="ogEmpty" class="muted" hidden></p>
     </section>
 
     <!-- 실행 -->

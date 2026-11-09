@@ -97,7 +97,7 @@ function activateTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${name}`));
   if (name === 'reports') loadRuns();
   if (name === 'run') refreshRunLabel();
-  if (name === 'setup') { lsSet('qa.updateUnseen', ''); paintUpdateDot(); renderUpdates(); }
+  if (name === 'setup') renderUpdates();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
 
@@ -326,14 +326,13 @@ async function refreshScenario() {
 }
 
 // ---------- 업데이트 알림 ----------
-// 준비 탭의 빨간 점: 받을 기록이 있거나, 받은 업데이트를 아직 준비 탭에서 안 봤을 때
+// 「최신 받기」 버튼의 빨간 점: 받을 기록이 있을 때. 버튼에 마우스를 올리면 받을 항목 제목이 보인다
 function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } }
 function lsSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (_) { /* 이번 실행 동안만 */ } }
 function paintUpdateDot() {
   const behind = state.scenBehind || 0;
-  const unseen = lsGet('qa.updateUnseen') === '1';
-  $('#updateDot').hidden = !(behind || unseen);
-  $('#updateDot').title = behind ? `받을 업데이트 ${behind}개 — 준비 탭에서 내용을 본다` : '새로 받은 업데이트가 있다 — 준비 탭에서 내용을 본다';
+  $('#updateDot').hidden = !behind;
+  if (!behind) $('#scenPull').title = '팀 저장소의 새 기록을 받는다';
 }
 function updItems(list, cls) {
   return `<ul class="upd-list ${cls || ''}">${list.map((c) => `<li><span class="when">${esc(c.date)}</span>
@@ -344,6 +343,9 @@ async function renderUpdates() {
   let u;
   try { u = await qa.scenarioUpdates(); } catch (_) { $('#updCard').hidden = true; return; }
   state.updBehindShown = u.incoming.length;
+  $('#scenPull').title = u.incoming.length
+    ? `받을 업데이트 ${u.incoming.length}개\n${u.incoming.slice(0, 8).map((c) => `· ${c.subject}`).join('\n')}${u.incoming.length > 8 ? '\n…' : ''}\n(자세히는 준비 탭)`
+    : '팀 저장소의 새 기록을 받는다';
   let last = null;
   try { last = JSON.parse(lsGet('qa.lastPulled') || 'null'); } catch (_) { /* 없음 */ }
   const parts = [];
@@ -391,10 +393,7 @@ async function scenDo(label, fn, { reload = false, auto = false } = {}) {
     const r = await fn();
     if (r === null) { $('#scenMsg').textContent = ''; return; }
     // 받은 기록을 남겨 둔다 — 앱이 업데이트돼 다시 시작해도 준비 탭에서 무엇이 들어왔는지 본다
-    if (r && Array.isArray(r.pulled) && r.pulled.length) {
-      lsSet('qa.lastPulled', JSON.stringify({ at: new Date().toISOString(), commits: r.pulled }));
-      if (!$('#tab-setup').classList.contains('active')) lsSet('qa.updateUnseen', '1');
-    }
+    if (r && Array.isArray(r.pulled) && r.pulled.length) lsSet('qa.lastPulled', JSON.stringify({ at: new Date().toISOString(), commits: r.pulled }));
     $('#scenMsg').textContent = r && r.note ? r.note : `${label} 완료`;
     clearTimeout(state.scenMsgTimer);
     state.scenMsgTimer = setTimeout(() => { if (!scenBusy) $('#scenMsg').textContent = ''; }, 5000);
@@ -448,6 +447,7 @@ async function loadSuites() {
   showSuiteAuthors(list);
   if ($('#rwSuite').value) await openRewindSuite($('#rwSuite').value);
   if ($('#ogSuite').value) await openOutgameSuite($('#ogSuite').value);
+  else { state.ogFile = null; state.ogSuite = null; renderOutgame(); }
 }
 // 묶음을 만든 사람(GitHub 아이디) — git 기록을 읽어 늦게 채운다. 아직 올리지 않은 묶음은 「공유 전」
 let suiteAuthorCache = {};
@@ -817,7 +817,14 @@ async function openOutgameSuite(file) {
 }
 function renderOutgame() {
   const onlyAuto = $('#ogOnlyAuto').checked;
-  const cases = ((state.ogSuite && state.ogSuite.cases) || []).filter((c) => !onlyAuto || (c.auto !== false && (c.steps || []).length));
+  const all = (state.ogSuite && state.ogSuite.cases) || [];
+  const cases = all.filter((c) => !onlyAuto || (c.auto !== false && (c.steps || []).length));
+  const sheet = state.ogSuite && typeof state.ogSuite.sheet === 'string' && state.ogSuite.sheet.startsWith('https://docs.google.com/') ? state.ogSuite.sheet : '';
+  $('#ogSheetOpen').hidden = !sheet;
+  $('#ogSheetOpen').dataset.url = sheet;
+  $('#ogEmpty').hidden = cases.length > 0;
+  $('#ogEmpty').textContent = !state.ogSuite ? '아웃게임 묶음이 없습니다 — 위에서 테스트 시트 링크로 만든다.'
+    : all.length ? `케이스 ${all.length}개 중 실행 단계가 있는 것이 없습니다 — 「자동화 가능한 것만」을 끄면 전부 보인다. 단계는 Claude 탭에서 채운다.` : '케이스가 없습니다.';
   $('#ogTable tbody').innerHTML = cases.map((c) => `<tr>
     <td><input type="checkbox" data-id="${esc(c.id)}" ${state.ogSelected.has(c.id) ? 'checked' : ''}></td>
     <td>${esc(c.id)}</td><td>${esc(c.title)}</td><td>${esc((c.plan || {}).class || '')}</td><td>${(c.steps || []).length ? (c.steps || []).length : '<span class="muted">실행 단계 없음</span>'}</td></tr>`).join('');
@@ -828,6 +835,46 @@ function renderOutgame() {
   $('#ogStatus').textContent = `${state.ogSelected.size}개 선택`;
 }
 $('#ogOnlyAuto').addEventListener('change', renderOutgame);
+$('#ogSheetOpen').addEventListener('click', () => qa.externalOpen($('#ogSheetOpen').dataset.url));
+
+// 테스트 시트 → 아웃게임 묶음
+async function sheetImport(how) {
+  const url = $('#ogSheetUrl').value.trim();
+  const suite = $('#ogSheetSuite').value.trim();
+  const status = $('#ogSheetStatus');
+  if (how !== 'file' && !url) { toast(status, '시트 링크를 넣는다', true); return; }
+  if (!suite) { toast(status, '묶음 이름을 넣는다(영문 소문자·숫자·-·_, 예: v127-basic)', true); return; }
+  const buttons = [$('#ogSheetImport'), $('#ogSheetCsv')];
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    let r;
+    if (how === 'file') {
+      r = await qa.sheetImportFile(url, suite);
+      if (r === null) { toast(status, ''); return; }
+    } else {
+      toast(status, '시트를 받는 중…');
+      r = await qa.sheetImport(url, suite);
+      if (!r.ok && r.code === 5) {
+        toast(status, '회사 계정 전용 시트다 — 브라우저가 CSV 를 내려받는 중… 브라우저가 로그인을 물으면 회사 계정으로 로그인한다(최대 3분 기다린다)');
+        r = await qa.sheetViaBrowser(url, suite);
+      }
+    }
+    if (!r.ok) { toast(status, r.error || '가져오지 못했다', true); return; }
+    const cols = Object.entries(r.columns || {}).map(([k, v]) => `${v || "(제목 없는 열)"}→${k}`).join(' · ');
+    toast(status, `「${suite}」 묶음을 만들었다 · 케이스 ${r.cases}개${cols ? ` · 읽은 열: ${cols}` : ''} — 「변경 공유」로 올리면 팀이 같이 본다`);
+    $('#ogSheetSuite').value = '';
+    state.ogFile = r.file;
+    await loadSuites();
+    $('#ogOnlyAuto').checked = false;
+    renderOutgame();
+  } catch (e) {
+    toast(status, e.message, true);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+$('#ogSheetImport').addEventListener('click', () => sheetImport('link'));
+$('#ogSheetCsv').addEventListener('click', () => sheetImport('file'));
 $('#ogAll').addEventListener('click', () => { $$('#ogTable input[data-id]').forEach((cb) => state.ogSelected.add(cb.dataset.id)); renderOutgame(); });
 $('#ogNone').addEventListener('click', () => { state.ogSelected.clear(); renderOutgame(); });
 

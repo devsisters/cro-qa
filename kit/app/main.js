@@ -111,6 +111,83 @@ handle('presets:server', async () => {
   const data = await r.json();
   return (data.presets || []).map((p) => p.name).filter((n) => typeof n === 'string' && n);
 });
+// ---------- 테스트 시트 → 아웃게임 묶음 ----------
+// 링크 공개 시트는 바로 받고, 회사 계정 전용이면 평소 브라우저(이미 로그인됨)로 CSV 를 내려받게 한 뒤
+// 다운로드 폴더에 새로 생긴 CSV 를 가져온다. 앱은 로그인 정보를 다루지 않는다
+const SUITE_NAME = /^[a-z0-9][a-z0-9_-]*$/;
+function sheetExportUrl(url) {
+  const m = /\/spreadsheets\/d\/([\w-]+)/.exec(String(url || ''));
+  if (!m) throw new Error('구글 스프레드시트 링크가 아니다(docs.google.com/spreadsheets/d/… 주소를 넣는다)');
+  const gid = /[#&?]gid=(\d+)/.exec(url);
+  return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gid ? `&gid=${gid[1]}` : ''}`;
+}
+function runSheetImport(source, suite, sheetUrl) {
+  if (!SUITE_NAME.test(suite)) throw new Error('묶음 이름은 영문 소문자·숫자·-·_ 로 쓴다(예: v127-basic)');
+  const out = kit.caseFile(`${suite}.json`);
+  if (fs.existsSync(out)) throw new Error(`「${suite}」 묶음이 이미 있다 — 다른 이름을 쓴다`);
+  const { execFile } = require('child_process');
+  const args = [path.join(kit.P.kit, 'tools', 'sheet_import.py'), source, '--suite', suite, '--out', out];
+  if (sheetUrl) args.push('--sheet-url', sheetUrl);
+  return new Promise((resolve) => {
+    execFile(kit.readSettings().python, args, { cwd: kit.P.kit, env: kit.toolEnv(), timeout: 90000 }, async (err, stdout, stderr) => {
+      let r;
+      // 결과 JSON 은 여러 줄로 나온다 — 첫 「{」부터 끝까지 읽는다
+      const text = String(stdout || '');
+      try { r = text.includes('{') ? JSON.parse(text.slice(text.indexOf('{'))) : null; } catch (_) { r = null; }
+      if (!r) r = { ok: false, error: String(stderr || (err && err.message) || '응답 없음').trim().slice(-300) };
+      r.code = err ? (typeof err.code === 'number' ? err.code : -1) : 0;
+      if (r.ok) {
+        // 만든 사람을 묶음에 적어 둔다(묶음 목록에 보인다)
+        try {
+          const data = JSON.parse(fs.readFileSync(out, 'utf8'));
+          const who = await scen.ghLogin().catch(() => '');
+          if (who && !data.createdBy) fs.writeFileSync(out, JSON.stringify(Object.assign({ suite: data.suite, createdBy: who }, data), null, 1));
+        } catch (_) { /* 작성자 없이 둔다 */ }
+        r.file = `${suite}.json`;
+      }
+      resolve(r);
+    });
+  });
+}
+handle('sheet:import', (url, suite) => {
+  sheetExportUrl(url);
+  return runSheetImport(String(url).trim(), suite);
+});
+handle('sheet:viaBrowser', async (url, suite) => {
+  if (!SUITE_NAME.test(suite)) throw new Error('묶음 이름은 영문 소문자·숫자·-·_ 로 쓴다(예: v127-basic)');
+  const exportUrl = sheetExportUrl(url);
+  const downloads = app.getPath('downloads');
+  const since = Date.now() - 2000;
+  await shell.openExternal(exportUrl);
+  const deadline = Date.now() + 180000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let found = null;
+    for (const name of fs.readdirSync(downloads)) {
+      if (!name.toLowerCase().endsWith('.csv')) continue;
+      const full = path.join(downloads, name);
+      const st = fs.statSync(full);
+      if (st.mtimeMs >= since && st.size > 0 && (!found || st.mtimeMs > found.mtime)) found = { full, mtime: st.mtimeMs, size: st.size };
+    }
+    if (found) {
+      await new Promise((r) => setTimeout(r, 800)); // 쓰기가 끝났는지 — 크기가 그대로인지 본다
+      if (fs.statSync(found.full).size !== found.size) continue;
+      const r = await runSheetImport(found.full, suite, String(url).trim());
+      r.csv = found.full;
+      return r;
+    }
+  }
+  throw new Error('3분 안에 다운로드 폴더에 CSV 가 생기지 않았다 — 브라우저에서 회사 계정으로 로그인했는지 보고, 받은 CSV 를 「CSV 파일로」로 고른다');
+});
+handle('sheet:importFile', async (url, suite) => {
+  const pick = await dialog.showOpenDialog(win, { title: '테스트 시트 CSV', properties: ['openFile'], filters: [{ name: 'CSV', extensions: ['csv'] }] });
+  if (pick.canceled || !pick.filePaths.length) return null;
+  return runSheetImport(pick.filePaths[0], suite, String(url || '').trim());
+});
+handle('external:open', (url) => {
+  if (!/^https:\/\/docs\.google\.com\//.test(String(url))) throw new Error('구글 문서 주소만 연다');
+  return shell.openExternal(url);
+});
 handle('cases:check', (name) => new Promise((resolve) => {
   const { execFile } = require('child_process');
   const settings = kit.readSettings();
