@@ -101,6 +101,12 @@ def validate(suite):
                             qc.normalize(sel)
                     for item in exp.get('text', []):
                         qc.normalize(item['select'])
+                    for item in exp.get('order', []):
+                        qc.normalize(item['select'])
+                        if not any(k in item for k in ('first', 'notFirst', 'sameAs')):
+                            raise ValueError('order 에는 first·notFirst·sameAs 중 하나가 필요')
+                        if item.get('sameAs') and item['sameAs'] not in names - {s.get('name')}:
+                            raise ValueError(f'order.sameAs 「{item["sameAs"]}」 는 이 checkpoint 보다 앞에 있어야 한다')
                     for sel in s.get('mask', []):
                         qc.normalize(sel)
                 except (ValueError, KeyError, TypeError) as e:
@@ -111,6 +117,18 @@ def validate(suite):
                         qc.normalize(s[key])
                     except ValueError as e:
                         errs.append(f'{where} step {i}: {e}')
+            if 'when' in s:
+                w = s['when']
+                if do == 'checkpoint':
+                    errs.append(f'{where} step {i}: checkpoint 에는 when 을 쓰지 않는다(판정 지점은 늘 지난다)')
+                elif not isinstance(w, dict) or not w or any(k not in ('present', 'absent') for k in w):
+                    errs.append(f'{where} step {i}: when 은 {{"present": 선택자}} 또는 {{"absent": 선택자}}')
+                else:
+                    try:
+                        for sel in w.values():
+                            qc.normalize(sel)
+                    except ValueError as e:
+                        errs.append(f'{where} step {i} when: {e}')
     return errs
 
 
@@ -148,6 +166,7 @@ class Runner:
             return res
         case_dir = os.path.join(self.out, case['id'])
         self.dev.out_dir = case_dir
+        self.cp_nodes = {}   # 이 케이스에서 지난 checkpoint 의 노드(order.sameAs 비교용)
         try:
             start = case.get('start', 'lobby')
             if start == 'relaunch' or relaunch_first:
@@ -185,6 +204,10 @@ class Runner:
         do = s['do']
         label = s.get('label') or f'{do} #{i}'
         timeout = s.get('timeout', 15)
+        if s.get('when') and not qc.check_when(s['when'], self.nodes()):
+            # 조건이 맞지 않으면 이 단계는 건너뛴다(예: 토글이 이미 원하는 상태)
+            res.setdefault('skipped', []).append({'step': i, 'label': label, 'when': s['when']})
+            return
         if do == 'tap':
             dev.tap(s['target'], label, s.get('index'))
         elif do == 'tap_select':
@@ -333,8 +356,11 @@ class Runner:
         scene = dev.scene()
         geometry = dev.call('ping').get('result', {})
         shot = dev.shot(name) if s.get('image', True) else None
-        cp = {'name': name, 'scene': scene, 'shot': shot, 'checks': qc.check_expect(s.get('expect'), scene, nodes),
+        prior = getattr(self, 'cp_nodes', {})
+        cp = {'name': name, 'scene': scene, 'shot': shot,
+              'checks': qc.check_expect(s.get('expect'), scene, nodes, prior),
               'baseline': None, 'diff': None, 'verdict': None}
+        prior[name] = nodes
         if s.get('image', True) and not shot:
             cp['shotError'] = getattr(dev, 'shot_error', None) or 'unknown'
         dump = {'scene': scene, 'geometry': {k: geometry.get(k) for k in ('visibleOrigin', 'visibleSize', 'frameSize')},
@@ -441,10 +467,10 @@ def main():
     runner.allow_time = a.allow_time and bool(suite.get('time_ok'))
     results = {'suite': name, 'sheet': suite.get('sheet', ''), 'platform': a.platform, 'device': a.device or '',
                'started': stamp, 'suiteFile': os.path.abspath(a.suite_file), 'cases': []}
-    if dev.call('ping').get('ok') is not True and not a.relaunch:
-        print(json.dumps({'ok': False, 'error': '브리지 응답이 없다 — 앱을 launch 하거나 --relaunch 를 준다'}, ensure_ascii=False))
-        return 3
-    first = a.relaunch
+    # 게임이 연결 모드로 떠 있지 않으면 되감기처럼 첫 케이스 전에 앱을 띄워 로비까지 간다(서버 프리셋·제목 영상 처리 포함)
+    first = a.relaunch or dev.call('ping').get('ok') is not True
+    if first and not a.relaunch:
+        print(f'[{a.platform}] 게임 연결이 없어 앱을 연결 모드로 띄우고 로비까지 간다', flush=True)
     aborted = None
     for case in cases:
         if aborted:

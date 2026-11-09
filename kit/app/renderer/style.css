@@ -362,3 +362,11 @@ table.tc tr.tc-row.sel td { background: var(--focus); }
 .og-detail .sc-fail { color: var(--danger); font-size: 11px; }
 .og-detail .sc-human { color: var(--unsure); margin: 2px 0; }
 .og-detail .sc-confirm { font-size: 11px; padding: 1px 8px; margin-top: 2px; }
+
+/* 아웃게임 시나리오 리포트 */
+.play-card .sc-point { border-top: 1px solid var(--line); padding: 8px 0; }
+.play-card .sc-checks { margin: 4px 0; padding-left: 18px; font-size: 12px; }
+.play-card .sc-checks li.bad { color: var(--danger); }
+.play-card .sc-checks li.ok { color: var(--muted); }
+.play-card .sc-human { color: var(--unsure); }
+.chip.v-HUMAN { color: var(--unsure); }

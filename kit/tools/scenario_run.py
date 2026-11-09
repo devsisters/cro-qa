@@ -88,7 +88,77 @@ def main():
     code = subprocess.call(cmd)
     if out:
         record_last_run(a.files, a.platform, out)
+        write_report(a.files, a.platform, out)
     return code
+
+
+VERDICT_KO = {'PASS': '통과', 'FAIL': '실패', 'HUMAN': '사람 확인', 'REVIEW': '확인 필요', 'UNSURE': '확인 필요',
+              'ERROR': '진행 실패', 'NOT_RUN': '미실행'}
+
+
+def write_report(files, platform, out):
+    """results.json 에 시나리오(TC) 정보를 붙이고 report.md 를 쓴다 — 위에 TC 별 표, 아래에 지점별 캡처가 든 상세."""
+    results_path = os.path.join(out, 'results.json')
+    if not os.path.exists(results_path):
+        return
+    results = qc.load_json(results_path)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(files[0]))) if files else ''
+    info = {}
+    for path in files:
+        data = qc.load_json(path)
+        tc = data.get('tc') or {}
+        info[data.get('key') or os.path.splitext(os.path.basename(path))[0]] = {
+            'tab': data.get('tab', ''), 'no': data.get('no', ''), 'section': tc.get('section', ''),
+            'path': ' › '.join(v for v in (tc.get('main'), tc.get('sub1'), tc.get('sub2'), tc.get('sub3')) if v),
+            'expected': tc.get('expected', ''), 'file': os.path.relpath(os.path.abspath(path), root) if root else path,
+            'labels': {p.get('name'): p.get('label', '') for p in data.get('scoring') or []}}
+    results['kind'] = 'scenario'
+    for c in results.get('cases', []):
+        c['scenario'] = info.get(c['id'], {})
+    qc.save_json(results_path, results)
+    rel = lambda p: os.path.relpath(p, out).replace(' ', '%20') if p and os.path.isabs(p) else (p or '')
+    cases = results.get('cases', [])
+    counts = {}
+    for c in cases:
+        counts[c['verdict']] = counts.get(c['verdict'], 0) + 1
+    L = [f'# 아웃게임 시나리오 [{platform.upper()}]', '',
+         f'TC {len(cases)} · ' + ' · '.join(f'{VERDICT_KO.get(v, v)} {n}' for v, n in counts.items()), '',
+         '| 탭 | No | 분류 | 기대 결과 | 판정 | 사유 |', '|---|---|---|---|---|---|']
+    for c in cases:
+        sc = c.get('scenario') or {}
+        reason = c.get('reason') or ''
+        if c.get('error'):
+            reason = f'{c["error"].get("kind")} at {c["error"].get("step")}: {c["error"].get("detail")}'
+        bad = [f'{cp["name"]}: ' + '; '.join(x['check'] for x in cp.get('checks', []) if not x['ok'])
+               for cp in c.get('checkpoints', []) if any(not x['ok'] for x in cp.get('checks', []))]
+        human = [f'{cp["name"]}: {cp.get("human")}' for cp in c.get('checkpoints', []) if cp.get('verdict') == 'HUMAN']
+        reason = ' / '.join(x for x in [reason] + bad + human if x)
+        cell = lambda v: str(v).replace('|', '\\|').replace('\n', ' ')
+        L.append(f'| {cell(sc.get("tab", ""))} | {cell(sc.get("no", ""))} | {cell(sc.get("path", ""))} | {cell(sc.get("expected", ""))} '
+                 f'| {VERDICT_KO.get(c["verdict"], c["verdict"])} | {cell(reason) or "-"} |')
+    L += ['', '## 상세', '']
+    for c in cases:
+        sc = c.get('scenario') or {}
+        L += [f'### {sc.get("tab", "")} No.{sc.get("no", "")} — {VERDICT_KO.get(c["verdict"], c["verdict"])}', '',
+              f'- 분류: {sc.get("path", "")}', f'- 기대 결과: {sc.get("expected", "")}', f'- 시나리오: `scenarios/{sc.get("file", "")}`']
+        if c.get('error'):
+            e = c['error']
+            L.append(f'- 진행 실패: {e.get("kind")} at {e.get("step")} — {e.get("detail")}')
+            if e.get('shot'):
+                L.append(f'  ![실패]({rel(e["shot"])})')
+        for cp in c.get('checkpoints', []):
+            label = (sc.get('labels') or {}).get(cp['name'], '')
+            L.append(f'- **{cp["name"]}** {label} — {VERDICT_KO.get(cp.get("verdict"), cp.get("verdict"))}')
+            for x in cp.get('checks', []):
+                if not x['ok']:
+                    L.append(f'  - ✗ {x["check"]} ({x["detail"]})')
+            if cp.get('human'):
+                L.append(f'  - 사람 확인: {cp["human"]}')
+            if cp.get('shot'):
+                L.append(f'  ![{cp["name"]}]({rel(cp["shot"])})')
+        L.append('')
+    with open(os.path.join(out, 'report.md'), 'w', encoding='utf-8') as f:
+        f.write('\n'.join(L) + '\n')
 
 
 def record_last_run(files, platform, out):

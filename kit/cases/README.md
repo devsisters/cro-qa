@@ -59,6 +59,9 @@
 
 모든 단계에 `label`(로그에 쓸 이름), `after`(단계 뒤 기다릴 초)를 붙일 수 있다. `timeout` 기본 15초.
 
+`when` — 조건이 맞을 때만 그 단계를 한다(checkpoint 제외). 앱에 저장되는 토글처럼 시작 상태가 실행마다 다를 때 맞춰 놓는 데 쓴다. 건너뛴 단계는 결과의 `skipped` 에 남는다.
+`{"do": "tap", "target": "마이쿠키 앞으로 정렬", "when": {"present": "_spriteMyCookieFirst"}}` — 체크 표시가 있을 때만 눌러 끈다. `{"absent": 선택자}` 도 된다.
+
 ## expect — 시트의 기대 결과를 트리 조건으로
 
 | 키 | 값 | 통과 조건 |
@@ -70,6 +73,7 @@
 | `disabled` | 선택자 배열 | 있고 모두 enabled=false (예: 이미 선택된 탭) |
 | `count` | 선택자 + `min`·`max` | 개수가 범위 안 |
 | `text` | `{"select": 선택자, "equals": "…"}` 또는 `"contains"` | 그 노드의 글자 |
+| `order` | `{"select": 선택자, "first": […], "notFirst": […], "sameAs": "<앞 checkpoint>", "ignore": […]}` | 선택자에 맞는 글자들을 화면 순서(위 줄부터, 줄 안에서 왼쪽부터)로 본다. `first`: 맨 앞부터 이 글자들 · `notFirst`: 맨 앞이 이 글자가 아님 · `sameAs`: 같은 케이스의 앞선 checkpoint 와 순서가 같음(`ignore` 글자를 양쪽에서 뺀 뒤 화면에 보이는 겹치는 앞부분만 비교) |
 
 시트에 적힌 기대만 옮긴다. 「~가 정상적으로 보인다」처럼 트리로 옮길 수 없는 것은 정답지 이미지 비교에 맡긴다.
 

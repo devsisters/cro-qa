@@ -1162,7 +1162,55 @@ function runTitle(name) {
   // 실행 폴더 이름: <묶음>-<ios|aos>-<YYYYMMDD-HHMMSS>
   const m = /^(.*)-(ios|aos|mac)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}$/.exec(name);
   if (!m) return { title: name, sub: '' };
-  return { title: m[1], sub: `${{ ios: 'iOS', aos: 'Android', mac: 'macOS' }[m[2]]} · ${m[4]}/${m[5]} ${m[6]}:${m[7]}` };
+  return { title: m[1] === 'scenario' ? '아웃게임 시나리오' : m[1], sub: `${{ ios: 'iOS', aos: 'Android', mac: 'macOS' }[m[2]]} · ${m[4]}/${m[5]} ${m[6]}:${m[7]}` };
+}
+// 아웃게임 시나리오 실행 리포트 — 위에 TC 별 상태 표, 아래에 지점별 캡처가 든 상세. 표의 줄을 누르면 그 TC 상세로 간다
+function renderScenarioRun(run) {
+  const cases = (run.results && run.results.cases) || [];
+  const ko = VERDICT_KO;
+  const abs = (p) => (!p ? '' : p.startsWith('/') ? p : `${run.dir}/${p}`);
+  const counts = {};
+  for (const c of cases) counts[c.verdict] = (counts[c.verdict] || 0) + 1;
+  $('#repCounts').innerHTML = [`<span class="chip">TC ${cases.length}</span>`,
+    ...Object.entries(counts).map(([v, n]) => `<span class="chip v-${v === 'HUMAN' ? 'UNSURE' : v}">${ko[v] || v} ${n}</span>`)].join('');
+  const why = (c) => {
+    const parts = [];
+    if (c.error) parts.push(`${c.error.kind} at ${c.error.step}: ${c.error.detail}`);
+    else if (c.reason) parts.push(c.reason);
+    for (const cp of c.checkpoints || []) {
+      const bad = (cp.checks || []).filter((x) => !x.ok).map((x) => x.check);
+      if (bad.length) parts.push(`${cp.name}: ${bad.join('; ')}`);
+      if (cp.verdict === 'HUMAN') parts.push(`${cp.name}: 사람 확인 — ${cp.human || ''}`);
+    }
+    return parts.join(' / ');
+  };
+  const rows = cases.map((c, i) => {
+    const sc = c.scenario || {};
+    const thumbs = (c.checkpoints || []).filter((cp) => cp.shot).map((cp) => `<img class="thumb" src="${fileUrl(abs(cp.shot))}" title="${esc(cp.name)} · ${esc(ko[cp.verdict] || cp.verdict)}" loading="lazy">`).join('');
+    return `<tr data-i="${i}"><td>${esc(sc.tab || '')}</td><td>${esc(sc.no || '')}</td><td class="muted">${esc(sc.path || c.title || c.id)}</td><td>${esc(sc.expected || '')}</td>
+      <td><span class="chip v-${c.verdict === 'HUMAN' ? 'UNSURE' : c.verdict}">${esc(ko[c.verdict] || c.verdict)}</span></td><td>${esc(why(c)) || '-'}</td><td class="thumbs">${thumbs}</td></tr>`;
+  }).join('');
+  $('#repBody').innerHTML = cases.length
+    ? `<table class="grid summary-table"><thead><tr><th>탭</th><th>No</th><th>분류</th><th>기대 결과</th><th>판정</th><th>사유</th><th>캡처</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<p class="muted">실행한 TC 가 없습니다</p>';
+  $('#repFull').open = true;
+  $('#repPlays').innerHTML = cases.map((c, i) => {
+    const sc = c.scenario || {};
+    const labels = sc.labels || {};
+    const err = c.error ? `<div class="play-reason">진행 실패: ${esc(c.error.kind)} at ${esc(c.error.step)} — ${esc(c.error.detail)}</div>${c.error.shot ? `<div class="gallery play-figs"><figure><img loading="lazy" src="${fileUrl(abs(c.error.shot))}"><figcaption>실패 시점</figcaption></figure></div>` : ''}` : '';
+    const cps = (c.checkpoints || []).map((cp) => `<div class="sc-point"><div><strong>${esc(cp.name)}</strong> ${esc(labels[cp.name] || '')} · <span class="chip v-${cp.verdict === 'HUMAN' ? 'UNSURE' : cp.verdict}">${esc(ko[cp.verdict] || cp.verdict)}</span></div>
+      ${(cp.checks || []).length ? `<ul class="sc-checks">${cp.checks.map((x) => `<li class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✓' : '✗'} ${esc(x.check)}${x.ok ? '' : ` <span class="muted">(${esc(x.detail)})</span>`}</li>`).join('')}</ul>` : ''}
+      ${cp.human ? `<div class="sc-human">사람 확인: ${esc(cp.human)}</div>` : ''}
+      ${cp.shot ? `<div class="gallery play-figs"><figure><img loading="lazy" src="${fileUrl(abs(cp.shot))}"><figcaption>${esc(cp.name)}</figcaption></figure></div>` : '<div class="muted">캡처 없음</div>'}</div>`).join('');
+    return `<section id="play-${i}" class="play-card v-${c.verdict}">
+      <div class="play-head"><span class="chip v-${c.verdict === 'HUMAN' ? 'UNSURE' : c.verdict}">${esc(ko[c.verdict] || c.verdict)}</span> <strong>${esc(sc.tab || '')} · No.${esc(sc.no || '')}</strong><span class="spacer"></span><button class="revealplay" data-rel="${esc(c.id)}">캡처 폴더</button></div>
+      <div class="play-reason">${esc(sc.path || '')}${sc.expected ? ` — ${esc(sc.expected)}` : ''}</div>${err}${cps}</section>`;
+  }).join('');
+  $('#repAttention').hidden = true;
+  $$('#repBody tr[data-i]').forEach((tr) => tr.addEventListener('click', () => focusPlay(tr.dataset.i)));
+  $$('#repBody img, #repPlays img').forEach((img) => img.addEventListener('click', (e) => { e.stopPropagation(); window.open(img.src); }));
+  $$('#repPlays .revealplay').forEach((b) => b.addEventListener('click', () => qa.runsOpenFile(state.repName, b.dataset.rel).catch((e) => toast($('#repStatus'), e.message, true))));
+  toast($('#repStatus'), '');
 }
 async function loadRuns() {
   const runs = await qa.runsList();
@@ -1202,6 +1250,11 @@ async function openRun(name) {
   $('#repOpen').disabled = false;
   state.repRel = run.report ? 'report.md' : '';
   $('#repPath').textContent = run.dir ? `${run.dir}/${state.repRel}`.replace(/\/$/, '') : '';
+  // 아웃게임 시나리오 실행 — 판이 아니라 TC(시나리오) 단위로 그린다
+  if (run.results && (run.results.kind === 'scenario' || (run.results.cases || []).some((c) => Array.isArray(c.checkpoints)))) {
+    renderScenarioRun(run);
+    return;
+  }
   // 집계는 results.json 에서 — 리포트 본문을 읽지 않아도 결과가 보이게
   const all = [];
   for (const c of ((run.results || {}).cases || [])) for (const p of (c.plays || [])) all.push(p);

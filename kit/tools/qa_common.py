@@ -82,8 +82,53 @@ def visible(tree):
 
 
 # --- 기대값(정답지 1층: 트리) ------------------------------------------------
-def check_expect(expect, scene, nodes):
-    """expect 를 트리로 판정한다 → [{'check','ok','detail'}]. 모델을 쓰지 않는다."""
+def screen_order(nodes, sel):
+    """선택자에 맞는 노드의 글자를 화면 순서(위 줄부터, 줄 안에서는 왼쪽부터)로. rect 원점은 왼쪽 아래다."""
+    hit = [n for n in select(nodes, sel) if n.get('rect') and n.get('text') is not None]
+    hit.sort(key=lambda n: (-round(n['rect'][1] + n['rect'][3]), n['rect'][0]))
+    return [n['text'] for n in hit]
+
+
+def check_order(item, nodes, prior):
+    """expect 의 order 항목 하나 → [(check, ok, detail)].
+    first: 앞에서부터 이 글자들 · notFirst: 맨 앞이 이 글자가 아니다 ·
+    sameAs: 앞선 checkpoint 와 순서가 같다(ignore 글자를 둘 다에서 뺀 뒤, 겹치는 앞부분)."""
+    sel = item['select']
+    cur = screen_order(nodes, sel)
+    shown = f'실제 {cur[:6]}'
+    out = []
+    if 'first' in item:
+        want = list(item['first'])
+        out.append((f'순서 맨 앞 {want}: {describe(sel)}', cur[:len(want)] == want, shown))
+    for t in item.get('notFirst', []):
+        out.append((f'순서 맨 앞이 「{t}」 아님: {describe(sel)}', bool(cur) and cur[0] != t, shown))
+    if item.get('sameAs'):
+        ref = (prior or {}).get(item['sameAs'])
+        ign = set(item.get('ignore', []))
+        if ref is None:
+            out.append((f'순서 = {item["sameAs"]}', False, f'앞선 checkpoint 「{item["sameAs"]}」 가 없다'))
+        else:
+            a = [t for t in cur if t not in ign]
+            b = [t for t in screen_order(ref, sel) if t not in ign]
+            n = min(len(a), len(b))
+            ok = n > 0 and a[:n] == b[:n]
+            out.append((f'순서 = {item["sameAs"]}' + (f' (뺀 것 {sorted(ign)})' if ign else '') + f': {describe(sel)}', ok,
+                        f'앞 {n}개 비교 · 이번 {a[:n]} · {item["sameAs"]} {b[:n]}' if not ok else f'앞 {n}개 같음'))
+    return out
+
+
+def check_when(when, nodes):
+    """단계의 when 조건({"present": 선택자} / {"absent": 선택자}) → 이 단계를 할지."""
+    if 'present' in when and not select(nodes, when['present']):
+        return False
+    if 'absent' in when and select(nodes, when['absent']):
+        return False
+    return True
+
+
+def check_expect(expect, scene, nodes, prior=None):
+    """expect 를 트리로 판정한다 → [{'check','ok','detail'}]. 모델을 쓰지 않는다.
+    prior: 같은 케이스에서 앞서 지난 checkpoint 이름 → 그때의 노드(order 의 sameAs 에 쓴다)."""
     out = []
 
     def add(check, ok, detail=''):
@@ -127,6 +172,9 @@ def check_expect(expect, scene, nodes):
         if 'contains' in item:
             ok = any(item['contains'] in t for t in texts)
             add(f'글자 ⊃ 「{item["contains"]}」: {describe(item["select"])}', ok, f'실제 {texts[:3]}')
+    for item in expect.get('order', []):
+        for check, ok, detail in check_order(item, nodes, prior):
+            add(check, ok, detail)
     return out
 
 

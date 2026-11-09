@@ -149,6 +149,42 @@ class TestExpect(unittest.TestCase):
         self.assertEqual([r['ok'] for r in res], [True, True, True, True, False, True, True])
         self.assertIn('Pop/_bg', res[4]['detail'])
 
+    def test_order(self):
+        def card(text, x, y):
+            return {'owner': 'Card', 'inst': '_labelName', 'text': text, 'rect': [x, y, 70, 30]}
+        sel = {'owner': 'Card', 'inst': '_labelName'}
+        # 위 줄(y 큼)부터, 줄 안에서는 왼쪽부터
+        on = [card('C', 300, 50), card('my', 100, 160), card('A', 200, 160), card('B', 300, 160), card('D', 100, 50)]
+        off = [card('A', 100, 160), card('B', 200, 160), card('my', 300, 160), card('C', 100, 50)]
+        self.assertEqual(qc.screen_order(on, sel), ['my', 'A', 'B', 'D', 'C'])
+        res = qc.check_expect({'order': [{'select': sel, 'first': ['my']}]}, 'S', on)
+        self.assertEqual([r['ok'] for r in res], [True])
+        res = qc.check_expect({'order': [{'select': sel, 'notFirst': ['my'], 'sameAs': 'on', 'ignore': ['my']}]},
+                              'S', off, {'on': on})
+        # off 는 A B C (my 뺌), on 은 A B D C — 앞 3개 중 셋째가 다르다
+        self.assertEqual([r['ok'] for r in res], [True, False])
+        off2 = [card('A', 100, 160), card('B', 200, 160), card('my', 300, 160), card('D', 100, 50)]
+        res = qc.check_expect({'order': [{'select': sel, 'sameAs': 'on', 'ignore': ['my']}]}, 'S', off2, {'on': on})
+        self.assertTrue(res[0]['ok'])
+        res = qc.check_expect({'order': [{'select': sel, 'sameAs': 'none'}]}, 'S', off2, {})
+        self.assertFalse(res[0]['ok'])
+
+    def test_when(self):
+        nodes = [{'inst': '_spriteCheck'}]
+        self.assertTrue(qc.check_when({'present': '_spriteCheck'}, nodes))
+        self.assertFalse(qc.check_when({'absent': '_spriteCheck'}, nodes))
+        self.assertTrue(qc.check_when({'absent': '_other'}, nodes))
+
+    def test_validate_order_when(self):
+        suite = {'cases': [{'id': 'O', 'auto': True, 'steps': [
+            {'do': 'tap', 'target': 'x', 'when': {'maybe': 'x'}},
+            {'do': 'checkpoint', 'name': 'b', 'expect': {'order': [{'select': '_l', 'sameAs': 'a'}]}},
+            {'do': 'checkpoint', 'name': 'a', 'expect': {'order': [{'select': '_l'}]}},
+        ]}]}
+        errs = '\n'.join(case_runner.validate(suite))
+        for frag in ('step 0: when 은', 'sameAs 「a」 는 이 checkpoint 보다 앞', 'first·notFirst·sameAs'):
+            self.assertIn(frag, errs)
+
     def test_worst(self):
         self.assertEqual(qc.worst(['PASS', 'REVIEW', 'FAIL']), 'FAIL')
         self.assertEqual(qc.worst([]), 'NOT_RUN')
