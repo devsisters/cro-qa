@@ -820,6 +820,7 @@ function scenarioOf(tab, tc) {
 }
 async function loadOutgame() {
   const r = await qa.sheetCurrent().catch(() => ({}));
+  og.scDir = await qa.scenariosDir().catch(() => '');
   og.sheet = r.cache || null;
   og.scenarios = await qa.scenariosList().catch(() => []);
   og.sheetKeys = new Set();
@@ -864,7 +865,7 @@ function renderOutgame() {
     shown += 1;
     const mark = !sc ? `<button class="og-make" data-key="${esc(tc.key)}">만들기</button>`
       : sc.changed ? `<span class="sc-warn" title="시트 문구가 시나리오를 만들 때와 다르다 — 확인 후 고친다">✓ 문구 바뀜</span>`
-        : `<span class="sc-ok" title="단계 ${sc.s.steps}개${sc.s.notes ? ` · 메모 ${sc.s.notes}개` : ''}">✓</span>`;
+        : `<span class="sc-ok" title="단계 ${sc.s.steps}개 · 채점 지점 ${sc.s.scoring}개${sc.s.notes ? ` · 메모 ${sc.s.notes}개` : ''}${sc.s.lastVerdict ? ` · 마지막 ${sc.s.lastVerdict}` : ''}">✓</span>${sc.s.scoring ? ` <span class="muted sc-n">채점 ${sc.s.scoring}</span>` : ''}${sc.s.lastVerdict ? ` <span class="st ${stClass(sc.s.lastVerdict === 'PASS' ? 'Pass' : sc.s.lastVerdict === 'FAIL' ? 'Fail' : 'Block')}">${esc(sc.s.lastVerdict)}</span>` : ''}`;
     rows.push(`<tr class="tc-row${og.selKey === tc.key ? ' sel' : ''}" data-key="${esc(tc.key)}">
       <td class="no">${esc(tc.no)}</td><td class="st">${esc(tc.priority)}</td><td class="path">${esc(tcPath(tc))}</td>
       <td class="exp">${tc.expected ? esc(tc.expected) : '<span class="muted">(기대 결과 없음)</span>'}</td>
@@ -900,15 +901,33 @@ async function showTcDetail(action) {
       <dt>시트 줄</dt><dd>${tc.row}</dd><dt>TC 키</dt><dd><code>${esc(tc.key)}</code></dd></dl>
     <h3>시나리오</h3>
     ${data ? `<p>${sc.changed ? '<span class="sc-warn">시트 문구가 바뀌었다 — 시나리오가 아직 옛 문구 기준이다</span><br>' : ''}단계 ${((data.case || {}).steps || []).length}개 · ${esc(data.createdBy || '')} ${esc((data.updatedAt || '').slice(0, 16).replace('T', ' '))}<br><code>scenarios/${esc(sc.s.file)}</code></p>
+      ${scoringHtml(data, sc.s.file)}
       ${notes.length ? `<div class="muted">교정·유의사항</div><ul class="notes">${notes.map((n) => `<li>${esc(typeof n === 'string' ? n : `${n.text || ''}${n.by ? ` — ${n.by}` : ''}`)}</li>`).join('')}</ul>` : ''}
       <button id="ogClaude" class="primary">Claude 와 고치기</button>`
       : '<p class="muted">시나리오 파일이 아직 없다. Claude 가 기기에서 화면을 확인하며 단계를 추측해 만들고 한 번 돌려 본다. 그다음 교정·유의사항을 말하면 시나리오를 고친다.</p><button id="ogClaude" class="primary">Claude 와 만들기</button>'}
     <button id="ogDetailClose">닫기</button>`;
   box.hidden = false;
+  $$('#ogDetail img').forEach((img) => img.addEventListener('click', () => window.open(img.src)));
   $('.og-split').classList.add('with-detail');
   $('#ogDetailClose').onclick = () => { og.selKey = ''; box.hidden = true; $('.og-split').classList.remove('with-detail'); $$('#ogTable tr.tc-row.sel').forEach((x) => x.classList.remove('sel')); };
   $('#ogClaude').onclick = () => askClaudeScenario(tab.name, tc, sc && sc.s.file);
   if (action === 'make') askClaudeScenario(tab.name, tc, null);
+}
+// 채점표 — 시나리오를 만들며 「여기 캡처해」로 정한 지점. 플랫폼별 정답 화면·사람이 말한 값·마지막 실행 결과
+function scoringHtml(data, file) {
+  const points = data.scoring || [];
+  const last = data.lastRun || null;
+  const base = `${og.scDir}/${file.replace(/\.json$/, '')}`;
+  const lastLine = last ? `<p class="muted">마지막 실행 ${esc((last.at || '').slice(5, 16).replace('T', ' '))} · ${esc(last.platform || '')} · <span class="st ${stClass(last.verdict === 'PASS' ? 'Pass' : last.verdict === 'FAIL' ? 'Fail' : 'Block')}">${esc(last.verdict || '-')}</span>${last.reason ? ` · ${esc(last.reason)}` : ''}</p>` : '';
+  if (!points.length) return `${lastLine}<p class="muted">채점표가 아직 없다 — 시나리오를 만들며 「여기 캡처해」라고 하면 그 화면이 정답으로 등록된다.</p>`;
+  const rows = points.map((p) => {
+    const refs = Object.keys(p.platforms || {}).map((pl) => `<figure><img src="${fileUrl(`${base}/${pl}/${p.name}.png`)}" loading="lazy"><figcaption>${pl === 'aos' ? 'AOS' : 'iOS'} 정답</figcaption></figure>`).join('');
+    const vals = (p.values || []).map((v) => `<div>${esc(v.label)} = <strong>${esc(v.value)}</strong></div>`).join('');
+    const lc = last && last.checkpoints && last.checkpoints[p.name];
+    const res = lc ? `<span class="st ${stClass(lc.verdict === 'PASS' ? 'Pass' : lc.verdict === 'FAIL' ? 'Fail' : 'Block')}">${esc(lc.verdict || '-')}</span>${lc.shot ? `<figure><img src="${fileUrl(`${state.kit}/${lc.shot}`)}" loading="lazy"><figcaption>${esc(last.platform)} 실행</figcaption></figure>` : ''}` : '<span class="muted">-</span>';
+    return `<tr><td><strong>${esc(p.name)}</strong>${p.label ? `<div class="muted">${esc(p.label)}</div>` : ''}</td><td><div class="sc-refs">${refs}</div>${vals}</td><td>${res}</td></tr>`;
+  }).join('');
+  return `${lastLine}<div class="muted">채점표</div><table class="grid scoring"><thead><tr><th>지점</th><th>기준</th><th>마지막 결과</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function askClaudeScenario(tabName, tc, file) {
   const target = file || `${tabDirName(tabName)}/${tc.key}.json`;
@@ -917,7 +936,7 @@ function askClaudeScenario(tabName, tc, file) {
     tc.comment ? `- 시트 Comment: ${tc.comment}` : '', `- TC 키: ${tc.key} · 시트 ${tc.row}번째 줄`, `- 시나리오 파일: scenarios/${target} (형식은 scenarios/README.md)`].filter(Boolean).join('\n');
   const prompt = file
     ? `${head} 시나리오를 이어서 고치자.\n${info}\n\n파일을 먼저 읽고 지금 단계와 notes 를 확인해줘. 내가 말하는 교정·유의사항은 notes 에 남기고 시나리오에 반영한 뒤 한 플랫폼에서 다시 돌려 결과를 알려줘.\n\n`
-    : `${head} 시나리오를 만들어줘.\n${info}\n\n기기에서 직접 화면을 확인하면서 단계를 추측해 시나리오 파일을 만들고, 한 플랫폼에서 한 번 돌려 결과와 확신이 없는 부분을 알려줘. 내가 교정하거나 유의사항을 말하면 notes 에 남기고 시나리오를 고친다.`;
+    : `${head} 시나리오를 만들어줘.\n${info}\n\n기기에서 직접 화면을 확인하면서 단계를 추측해 시나리오 파일을 만들고, 한 플랫폼에서 한 번 돌려 결과와 확신이 없는 부분을 알려줘. 내가 교정하거나 유의사항을 말하면 notes 에 남기고 시나리오를 고친다. 내가 「여기 캡처해」라고 하면 그 지점을 채점표에 등록한다(tools/scenario_capture.py, 그 자리에 checkpoint 단계).`;
   activateTab('chat');
   if (!file || !state.chatSession) $('#chatNew').click();
   $('#chatInput').value = prompt;

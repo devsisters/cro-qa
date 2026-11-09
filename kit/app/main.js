@@ -223,6 +223,7 @@ function scenarioIndex() {
       if (!data) { out.push({ file: `${tab.name}/${f}`, broken: true }); continue; }
       out.push({ file: `${tab.name}/${f}`, key: data.key || f.replace(/\.json$/, ''), tab: data.tab || tab.name, no: data.no,
         expected: (data.tc || {}).expected || '', steps: ((data.case || {}).steps || []).length, notes: (data.notes || []).length,
+        scoring: (data.scoring || []).length, lastVerdict: (data.lastRun || {}).verdict || '',
         createdBy: data.createdBy || '', updatedAt: data.updatedAt || '' });
     }
   }

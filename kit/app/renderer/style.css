@@ -342,3 +342,11 @@ table.tc tr.tc-row.sel td { background: var(--focus); }
 .og-detail dt { color: var(--muted); }
 .og-detail dd { margin: 0; white-space: pre-wrap; }
 .og-detail .notes { margin: 6px 0 10px; padding-left: 18px; }
+
+.og-detail table.scoring { font-size: 12px; margin: 4px 0 10px; }
+.og-detail table.scoring td { vertical-align: top; }
+.og-detail .sc-refs { display: flex; gap: 6px; flex-wrap: wrap; }
+.og-detail figure { margin: 2px 0; }
+.og-detail figure img { max-width: 130px; max-height: 80px; border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; display: block; }
+.og-detail figcaption { font-size: 11px; color: var(--muted); }
+.sc-n { font-size: 11px; }

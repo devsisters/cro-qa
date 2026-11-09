@@ -29,6 +29,10 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
   "note": "트리로 옮기지 못한 기대 등",
   "steps": [ … ]
  },
+ "scoring": [
+  {"name": "episode-select", "label": "에피소드 선택 화면이 열린다", "values": [{"label": "골드", "value": "100"}],
+   "mask": [], "platforms": {"aos": {"at": "2026-11-09T16:42:00", "by": "담당자"}}}
+ ],
  "notes": [
   {"at": "2026-11-09", "by": "담당자", "text": "교정·유의사항 — 사람이 말한 그대로"}
  ],
@@ -41,6 +45,22 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
 - `server` 와 `time_ok` 는 `state` 단계(마카롱)·`server_time` 단계가 있을 때만 쓴다.
 - `case` 는 케이스 한 개와 같은 모양이다. 단계 종류·선택자·판정은 `kit/cases/README.md` 의 「단계」 절을 따른다.
 - `notes` 는 지우지 않고 쌓는다. 다음에 고칠 때 먼저 읽는다.
+- `scoring`(채점표)은 채점할 지점의 목록이다. 시나리오를 만드는 중 사람이 「여기 캡처해」라고 한 지점이다.
+  - 지점마다 그때 화면이 정답으로 저장된다: `scenarios/<탭>/<키>/<플랫폼>/<지점>.png` · `.json`
+  - `values` 는 사람이 말한 숫자·값이다(예: 골드 = 100). 트리로 확인할 수 있으면 그 지점 checkpoint 의 `expect` 에도 넣는다.
+  - `case.steps` 에 같은 이름의 `checkpoint` 단계가 있어야 다음 실행에서 채점된다.
+  - 채점은 정답지 비교와 같다. 글자 목록과 화면을 정답과 비교하고, 숫자가 든 글자와 `mask` 영역은 비교에서 뺀다. 차이가 있으면 REVIEW 로 사람이 본다.
+- `lastRun` 은 `scenario_run.py` 가 돌린 뒤 적는다(지점별 판정·실행 캡처 경로).
+
+「여기 캡처해」 — 기기가 그 화면에 와 있을 때:
+
+```bash
+cd kit
+python3 tools/scenario_capture.py ../scenarios/<탭>/<키>.json --platform aos --name <지점> --by <말한 사람> \
+        --label "무엇을 보는 지점인지" [--value "골드=100"] [--mask '{"inst": "_labelTime"}']
+```
+
+이 도구는 채점표와 정답만 만든다. 같은 자리에 `{"do": "checkpoint", "name": "<지점>"}` 단계를 넣는 것은 Claude 가 한다.
 
 돌리기:
 

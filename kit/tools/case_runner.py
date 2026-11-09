@@ -346,7 +346,9 @@ class Runner:
         if not all(c['ok'] for c in cp['checks']):
             cp['verdict'] = 'FAIL'
             return cp
-        base = os.path.join(qc.ANSWERS, self.suite_name, self.platform, case['id'])
+        # 시나리오(scenarios/<탭>/<키>.json)는 채점표 정답을 저장소의 scenarios/<탭>/<키>/<플랫폼>/ 에 둔다
+        base = os.path.join(case['answersDir'], self.platform) if case.get('answersDir') \
+            else os.path.join(qc.ANSWERS, self.suite_name, self.platform, case['id'])
         bpng, bjson = os.path.join(base, f'{name}.png'), os.path.join(base, f'{name}.json')
         if not os.path.exists(bjson):
             cp['verdict'] = 'PASS'

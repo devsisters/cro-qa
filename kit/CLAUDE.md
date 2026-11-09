@@ -66,6 +66,7 @@
 QA 앱이 테스트 시트를 탭별 TC 로 읽는다(`tools/sheet_tc.py`). TC 하나의 자동 실행 방법은 저장소 `scenarios/<탭>/<TC 키>.json` 이고 형식은 `scenarios/README.md` 다.
 - 앱의 「Claude 와 만들기」가 TC 정보(구간·분류·기대 결과·TC 키·파일 경로)를 넣은 요청을 준다. 위 2-3 순서대로 화면을 확인해 단계를 쓰고, `tools/scenario_run.py <파일> --platform aos|ios` 로 한 번 돌려 결과와 확신 없는 부분을 알린다
 - 담당자의 교정·유의사항은 `notes` 에 그대로 남기고 단계에 반영한다. notes 는 지우지 않는다
+- 담당자가 「여기 캡처해」라고 하면 그 화면이 채점 지점이다: 지금 화면에서 `tools/scenario_capture.py` 로 정답을 저장하고(말한 숫자·값은 `--value`, 바뀌는 영역은 `--mask`), 같은 자리에 같은 이름의 `checkpoint` 단계를 넣는다. 정답은 사람이 지목한 화면만 쓴다 — Claude 가 스스로 정답을 정하지 않는다
 - 시트 원문(`tc`)은 고치지 않는다. 시트가 바뀌어 앱이 「문구 바뀜」을 보이면 새 문구로 `key`·`tc` 를 바꾸고 파일 이름도 새 키로 바꾼다
 
 ## 3. 실행 — iOS·Android 동시에
