@@ -174,12 +174,46 @@ async function pull() {
   const out = await status();
   const kitRel = kitPathIn(dir);
   const after = (await git(dir, ['rev-parse', 'HEAD'])).out.trim();
+  if (before && after && before !== after) out.pulled = await commits(dir, `${before}..${after}`);
   if (kitRel && before && after && before !== after) {
     const files = (await git(dir, ['diff', '--name-only', before, after])).out.split('\n').filter(Boolean);
     out.appUpdated = files.some((f) => f.startsWith(`${kitRel}/app/`) || f.startsWith(`${kitRel}/tools/`));
     out.depsUpdated = files.some((f) => f === `${kitRel}/app/package.json` || f === `${kitRel}/app/package-lock.json`);
   }
   return out;
+}
+
+// 업데이트 항목 — 기록마다 제목과 무엇이 바뀌었는지(앱·케이스·문서·녹화·프리셋)
+const SEP = '\x1e';
+function areaOf(file, kitRel) {
+  if (kitRel && (file.startsWith(`${kitRel}/app/`) || file.startsWith(`${kitRel}/tools/`))) return '앱';
+  if (file.startsWith('cases/')) return '케이스';
+  if (file.startsWith('docs/')) return '문서';
+  if (file.startsWith('recordings/')) return '녹화';
+  if (file.startsWith('presets/')) return '프리셋';
+  return '기타';
+}
+async function commits(dir, range, limit) {
+  const args = ['log', '--name-only', `--format=${SEP}%H%x1f%h%x1f%an%x1f%ad%x1f%s`, '--date=format:%m/%d %H:%M'];
+  if (limit) args.push('-n', String(limit));
+  const r = await git(dir, [...args, range]);
+  if (r.code) return [];
+  const kitRel = kitPathIn(dir);
+  return r.out.split(SEP).filter((x) => x.trim()).map((block) => {
+    const [head, ...files] = block.split('\n');
+    const [sha, short, author, date, subject] = head.split('\x1f');
+    const changed = files.map((f) => f.trim()).filter(Boolean);
+    return { sha, short, author, date, subject, areas: [...new Set(changed.map((f) => areaOf(f, kitRel)))], files: changed.length };
+  });
+}
+/** 받을 기록(아직 안 받은 것)과 최근 기록 */
+async function updates(limit = 15) {
+  const dir = root();
+  const st = await status();
+  return {
+    incoming: st.upstream ? await commits(dir, 'HEAD..@{u}') : [],
+    recent: await commits(dir, 'HEAD', limit),
+  };
 }
 
 /** 팀 저장소에 새 기록이 있는지만 확인한다(받지는 않는다) */
@@ -248,4 +282,4 @@ async function suiteAuthors(files) {
   return out;
 }
 
-module.exports = { status, connect, pull, push, fetch, kitRepoDir, kitPathIn, parseStatus, normalizeRemote, defaultDir, teamRepo, ghLogin, suiteAuthors };
+module.exports = { status, connect, pull, push, fetch, kitRepoDir, kitPathIn, parseStatus, normalizeRemote, defaultDir, teamRepo, ghLogin, suiteAuthors, updates };

@@ -97,6 +97,7 @@ function activateTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${name}`));
   if (name === 'reports') loadRuns();
   if (name === 'run') refreshRunLabel();
+  if (name === 'setup') { lsSet('qa.updateUnseen', ''); paintUpdateDot(); renderUpdates(); }
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
 
@@ -318,7 +319,50 @@ async function refreshScenario() {
   $('#scenPull').disabled = scenBusy || !st.ready;
   $('#scenPush').disabled = scenBusy || !st.ready || !(st.changed.length || st.ahead || !st.upstream);
   $('#scenOpen').disabled = !st.ready;
+  state.scenBehind = st.ready ? st.behind : 0;
+  paintUpdateDot();
+  if (st.ready && state.updBehindShown !== st.behind) renderUpdates();
   return st;
+}
+
+// ---------- 업데이트 알림 ----------
+// 준비 탭의 빨간 점: 받을 기록이 있거나, 받은 업데이트를 아직 준비 탭에서 안 봤을 때
+function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } }
+function lsSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (_) { /* 이번 실행 동안만 */ } }
+function paintUpdateDot() {
+  const behind = state.scenBehind || 0;
+  const unseen = lsGet('qa.updateUnseen') === '1';
+  $('#updateDot').hidden = !(behind || unseen);
+  $('#updateDot').title = behind ? `받을 업데이트 ${behind}개 — 준비 탭에서 내용을 본다` : '새로 받은 업데이트가 있다 — 준비 탭에서 내용을 본다';
+}
+function updItems(list, cls) {
+  return `<ul class="upd-list ${cls || ''}">${list.map((c) => `<li><span class="when">${esc(c.date)}</span>
+    <span><span class="subject">${esc(c.subject)}</span><br>${c.areas.map((a) => `<span class="upd-area${a === '앱' ? ' app' : ''}">${esc(a)}</span>`).join('')}<span class="muted">파일 ${c.files}개</span></span>
+    <span class="who">${esc(c.author)}</span></li>`).join('')}</ul>`;
+}
+async function renderUpdates() {
+  let u;
+  try { u = await qa.scenarioUpdates(); } catch (_) { $('#updCard').hidden = true; return; }
+  state.updBehindShown = u.incoming.length;
+  let last = null;
+  try { last = JSON.parse(lsGet('qa.lastPulled') || 'null'); } catch (_) { /* 없음 */ }
+  const parts = [];
+  if (u.incoming.length) {
+    const app = u.incoming.some((c) => c.areas.includes('앱'));
+    parts.push(`<div class="upd-group"><h3>받을 업데이트 ${u.incoming.length}개 <button id="updPull" class="primary">최신 받기</button>${app ? '<span class="muted">앱이 바뀐 것이 있어 받은 뒤 다시 시작한다</span>' : ''}</h3>${updItems(u.incoming, 'upd-new')}</div>`);
+  } else {
+    parts.push('<p class="muted">받을 업데이트가 없습니다 — 최신입니다.</p>');
+  }
+  if (last && last.commits && last.commits.length) {
+    const at = new Date(last.at);
+    const when = `${at.getMonth() + 1}/${at.getDate()} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    parts.push(`<div class="upd-group"><h3>마지막으로 받은 업데이트 <span class="muted">${when} · ${last.commits.length}개</span></h3>${updItems(last.commits)}</div>`);
+  }
+  if (u.recent.length) parts.push(`<details class="sect"><summary>최근 기록 ${u.recent.length}개</summary>${updItems(u.recent)}</details>`);
+  $('#updList').innerHTML = parts.join('');
+  $('#updCard').hidden = false;
+  const pullBtn = document.getElementById('updPull');
+  if (pullBtn) pullBtn.onclick = () => $('#scenPull').click();
 }
 
 // 받은 것에 앱 코드가 있으면 다시 시작해야 반영된다 — 앱을 켤 때 받은 것이면 바로, 쓰는 중이면 버튼으로
@@ -346,6 +390,11 @@ async function scenDo(label, fn, { reload = false, auto = false } = {}) {
   try {
     const r = await fn();
     if (r === null) { $('#scenMsg').textContent = ''; return; }
+    // 받은 기록을 남겨 둔다 — 앱이 업데이트돼 다시 시작해도 준비 탭에서 무엇이 들어왔는지 본다
+    if (r && Array.isArray(r.pulled) && r.pulled.length) {
+      lsSet('qa.lastPulled', JSON.stringify({ at: new Date().toISOString(), commits: r.pulled }));
+      if (!$('#tab-setup').classList.contains('active')) lsSet('qa.updateUnseen', '1');
+    }
     $('#scenMsg').textContent = r && r.note ? r.note : `${label} 완료`;
     clearTimeout(state.scenMsgTimer);
     state.scenMsgTimer = setTimeout(() => { if (!scenBusy) $('#scenMsg').textContent = ''; }, 5000);

@@ -8,7 +8,7 @@
 </head>
 <body>
   <nav id="tabs" role="tablist">
-    <button data-tab="setup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12.5 9 17.5 20 6.5"/></svg>준비<span id="setupBadge"></span></button>
+    <button data-tab="setup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12.5 9 17.5 20 6.5"/></svg>준비<span id="setupBadge"></span><span id="updateDot" class="update-dot" hidden></span></button>
     <button data-tab="devices" role="tab" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg>기기</button>
     <button data-tab="rewind" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>되감기</button>
     <button data-tab="outgame" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>아웃게임</button>
@@ -28,6 +28,7 @@
     <!-- 준비 -->
     <section id="tab-setup" class="tab">
       <div class="card"><h2>팀 시나리오 저장소</h2><div id="scenSetup"></div></div>
+      <div class="card" id="updCard" hidden><h2>업데이트</h2><div id="updList"></div></div>
       <div id="setupSection">
         <h2>처음 세팅</h2>
         <p class="muted">「필요」 줄부터 고친다. 비밀번호·로그인이 필요한 것은 터미널 창이 열린다.</p>

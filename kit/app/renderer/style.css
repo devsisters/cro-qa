@@ -54,6 +54,16 @@ nav#tabs button:hover { color: var(--text); background: var(--row-hover); }
 nav#tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
 nav#tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #setupBadge:empty { display: none; }
+.update-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-left: 2px; align-self: flex-start; margin-top: 2px; }
+.upd-group h3 { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; }
+.upd-list { list-style: none; margin: 0; padding: 0; }
+.upd-list li { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.upd-list li:last-child { border-bottom: none; }
+.upd-list .when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.upd-list .who { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.upd-area { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 8px; margin-right: 4px; background: var(--surface-alt); color: var(--muted); border: 1px solid var(--line); }
+.upd-area.app { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.upd-new li .subject { font-weight: 600; }
 #setupBadge { min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--danger); color: var(--on-accent); font-size: 11px; line-height: 16px; text-align: center; }
 #kitPath { margin-left: auto; align-self: center; font-size: 11px; color: var(--muted); max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

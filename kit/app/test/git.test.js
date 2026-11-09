@@ -109,8 +109,15 @@ test('받은 것에 앱(키트) 파일이 있으면 다시 시작이 필요하�
     st = await scen.pull();
     assert.strictEqual(st.depsUpdated, true);
     commitIn(A, 'cases/other.json', '{}\n');
+    await scen.fetch();
+    const u = await scen.updates();
+    assert.strictEqual(u.incoming.length, 1, '받기 전에 받을 기록이 보인다');
+    assert.deepStrictEqual(u.incoming[0].areas, ['케이스']);
     st = await scen.pull();
     assert.ok(!st.appUpdated, '케이스만 받으면 다시 시작할 필요가 없다');
+    assert.strictEqual(st.pulled.length, 1, '받은 기록이 결과에 실린다');
+    assert.strictEqual((await scen.updates()).incoming.length, 0);
+    assert.deepStrictEqual((await scen.updates()).recent.find((c) => c.files && c.areas.includes('앱')).areas, ['앱']);
   } finally {
     kit.P.kit = realKit;
   }

@@ -103,6 +103,7 @@ handle('cases:delete', (name) => {
 });
 handle('cases:authors', () => scen.suiteAuthors(kit.listCases().map((x) => x.file)));
 handle('gh:login', () => scen.ghLogin());
+handle('scenario:updates', () => scen.updates());
 // 게임 서버 프리셋 목록 — 게임 서버 선택 창과 같은 주소에서 이름만 받는다
 handle('presets:server', async () => {
   const r = await fetch('https://crepe.devspie.com/presets/list', { signal: AbortSignal.timeout(15000) });
