@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>QA 자동화</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="tabs" role="tablist">
+    <button data-tab="setup" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12.5 9 17.5 20 6.5"/></svg>준비<span id="setupBadge"></span></button>
+    <button data-tab="devices" role="tab" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M11 17.5h2"/></svg>기기</button>
+    <button data-tab="rewind" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>되감기</button>
+    <button data-tab="outgame" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>아웃게임</button>
+    <button data-tab="run" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 4.5v15l12-7.5z"/></svg>실행</button>
+    <button data-tab="reports" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>리포트</button>
+    <button data-tab="chat" role="tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16v11H9l-5 4z"/></svg>Claude</button>
+    <span id="kitPath"></span>
+  </nav>
+  <div id="scenBar" class="scenbar">
+    <span class="label">팀 시나리오</span> <strong id="scenWhere"></strong> <span id="scenState" class="muted"></span>
+    <span id="appUpdate" class="app-update" hidden>앱 새 버전을 받았습니다 <button id="appRestart" class="primary">다시 시작</button></span>
+    <button id="scenPull">최신 받기</button><button id="scenPush">변경 공유</button><button id="scenOpen">폴더 열기</button>
+    <span id="scenMsg" class="muted"></span>
+  </div>
+
+  <main>
+    <!-- 준비 -->
+    <section id="tab-setup" class="tab">
+      <div class="card"><h2>팀 시나리오 저장소</h2><div id="scenSetup"></div></div>
+      <div id="setupSection">
+        <h2>처음 세팅</h2>
+        <p class="muted">「필요」 줄부터 고친다. 비밀번호·로그인이 필요한 것은 터미널 창이 열린다.</p>
+        <div class="toolbar"><button id="setupRecheck" class="primary">다시 점검</button><span id="setupStatus" class="muted"></span></div>
+        <table class="grid setup"><thead><tr><th>상태</th><th>항목</th><th>필요한 곳</th><th>지금</th><th>고치는 방법</th></tr></thead><tbody id="setupRows"></tbody></table>
+        <pre id="setupLog" class="log setup-log" hidden></pre>
+      </div>
+      <details class="sect">
+        <summary>도구 경로</summary>
+        <div class="rw-fields">
+          <label>Python<input id="setPython"></label>
+          <label>Claude CLI<input id="setClaude" placeholder="PATH 에 없으면 전체 경로"></label>
+          <label class="full">Xcode Developer<input id="setDeveloperDir"></label>
+        </div>
+        <div class="row"><button id="saveSettings">경로 저장</button></div>
+      </details>
+    </section>
+    <!-- 기기 -->
+    <section id="tab-devices" class="tab active">
+      <div class="toolbar"><button id="discoverDevices">기기 검색</button><span id="discoverStatus" class="muted"></span></div>
+      <table class="grid devices">
+        <thead><tr><th>플랫폼</th><th>기기</th><th>게임 연결</th><th></th></tr></thead>
+        <tbody>
+          <tr data-platform="ios"><td>iOS</td><td><select class="device-id"></select><div class="device-sub muted"></div></td><td class="device-cell"><span class="device-status muted">-</span><div class="device-hint muted"></div></td><td class="actions"><button class="launch" title="자동화 연결을 켠 채로 게임을 다시 띄운다">연결 모드로 실행</button><button class="ping">연결 확인</button></td></tr>
+          <tr data-platform="aos"><td>Android</td><td><select class="device-id"></select><div class="device-sub muted"></div></td><td class="device-cell"><span class="device-status muted">-</span><div class="device-hint muted"></div></td><td class="actions"><button class="launch" title="자동화 연결을 켠 채로 게임을 다시 띄운다">연결 모드로 실행</button><button class="ping">연결 확인</button></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 되감기 -->
+    <section id="tab-rewind" class="tab workspace">
+      <div class="toolbar">
+        <label>묶음 <select id="rwSuite"></select></label>
+        <button id="rwNewSuite">새 묶음</button>
+        <span class="spacer"></span>
+        <span id="rwStatus" class="muted"></span>
+        <button id="rwRecord" title="이 케이스의 맵·카드로 사람이 한 판 플레이하면 위치마다 누른 입력을 녹화한다">맵 녹화</button>
+        <button id="rwCheck">케이스 검사</button>
+        <button id="rwSave" class="primary">저장</button>
+        <button id="rwGoRun">실행으로</button>
+      </div>
+      <div class="split">
+        <aside>
+          <div class="aside-head"><span id="rwCount" class="muted"></span><button id="rwAddCase">+ 추가</button></div>
+          <ul id="rwCases" class="list"></ul>
+          <button id="rwDelCase" class="danger">선택한 케이스 삭제</button>
+        </aside>
+        <div id="rwForm" class="form detail">
+          <ul id="rwErrors" class="errors"></ul>
+          <div class="sect">
+            <div class="rw-fields">
+              <label class="full">케이스 제목<input data-k="title" placeholder="무엇을 확인하는 케이스인지"></label>
+              <label>맵<span class="with-btn"><input data-k="map" list="mapList"><button id="rwLoadMaps" title="연결된 기기에서 테스트 맵 목록을 받는다">기기에서 목록</button></span></label>
+              <label>판 수<input data-k="plays" type="number" min="1" class="short"></label>
+            </div>
+            <datalist id="mapList"></datalist>
+          </div>
+          <div class="sect">
+            <h3>되감기 조건</h3>
+            <table class="grid triggers"><thead><tr><th>언제</th><th>시간(초)</th><th>판당 횟수</th><th>되감을 지점</th><th></th></tr></thead><tbody id="rwTriggers"></tbody></table>
+            <div class="row">
+              <button id="rwAddTrigger">+ 조건 추가</button>
+              <span class="spacer"></span>
+              <label>기본 되감을 지점 <select data-k="target"><option value="latest">5초 전(가장 최근)</option><option value="oldest">가장 먼 지점(15초 전)</option></select></label>
+            </div>
+          </div>
+          <div class="sect">
+            <h3>게임 조작</h3>
+            <div class="row">
+              <label>프리셋 <select id="rwPreset"></select></label>
+              <button id="rwApplyPreset">적용</button>
+              <button id="rwSavePreset">프리셋 저장</button>
+              <span class="spacer"></span>
+              <label class="check"><input data-in="rescue" type="checkbox"> 구멍 구출</label>
+              <label class="check"><input data-in="relay" type="checkbox"> 이어달리기</label>
+            </div>
+            <details>
+              <summary>조작 세부 설정</summary>
+              <div class="rw-fields three">
+                <label>방식<select data-in="mode"><option value="smart">장애물 보고 피하기</option><option value="replay">녹화대로 달리기</option><option value="random">랜덤으로 누름</option><option value="none">누르지 않음</option></select></label>
+                <label>녹화 파일<span class="unit"><input data-in="recording" type="text" placeholder="비우면 맵 이름.json">녹화대로 달리기에서 쓴다 · 시나리오 저장소 recordings/</span></label>
+                <label>누르는 시점 보정<span class="unit"><input data-in="timingOffset" type="number" step="0.02" min="-0.3" max="0.3" class="short">초 · +면 늦게, −면 일찍</span></label>
+                <label>실수 비율<span class="unit"><input data-in="mistakeRatio" type="number" step="0.05" min="0" max="1" class="short">피하기에서 일부러 반응 안 할 비율</span></label>
+                <label>초당 동작<input data-in="actionsPerSec" type="number" step="0.1" min="0" max="10" class="short"></label>
+                <label>슬라이드 비율<input data-in="slideRatio" type="number" step="0.05" min="0" max="1" class="short"></label>
+                <label>더블점프 비율<input data-in="doubleJumpRatio" type="number" step="0.05" min="0" max="1" class="short"></label>
+                <label>능력 사용 간격<span class="unit"><input data-in="abilityEverySec" type="number" step="1" min="0" max="600" class="short">초 · 0이면 사용 안 함</span></label>
+              </div>
+            </details>
+          </div>
+          <details class="sect">
+            <summary>카드 지정 <span id="rwCardSummary" class="muted"></span></summary>
+            <p class="muted">이름이나 ID 로 고른다 · 빈 칸은 무작위 · 쿠키2·보물은 「없음」을 고르면 비운다 <button id="rwLoadCards" title="연결된 기기에서 쿠키·펫·보물 이름 목록을 받는다(한 번 받으면 기억한다)">기기에서 카드 목록</button></p>
+            <div class="rw-fields three">
+              <label>쿠키1<input data-card="cookie1" list="cookieList" placeholder="무작위"></label>
+              <label>쿠키2<input data-card="cookie2" list="cookie2List" placeholder="무작위"></label>
+              <label>펫<input data-card="pet" list="petList" placeholder="무작위"></label>
+              <label>보물1<input data-card="t0" list="treasureList" placeholder="무작위"></label>
+              <label>보물2<input data-card="t1" list="treasureList" placeholder="무작위"></label>
+              <label>보물3<input data-card="t2" list="treasureList" placeholder="무작위"></label>
+            </div>
+            <datalist id="cookieList"></datalist>
+            <datalist id="cookie2List"><option value="없음"></option></datalist>
+            <datalist id="petList"></datalist>
+            <datalist id="treasureList"><option value="없음"></option></datalist>
+          </details>
+          <details class="sect">
+            <summary>재현 설정 <span class="muted">ID · 시드 · 판당 제한 시간</span></summary>
+            <p class="muted">시드를 비우면 실행할 때마다 새로 뽑는다. 리포트의 시드를 넣으면 그 판을 다시 돌릴 수 있다.</p>
+            <div class="rw-fields">
+              <label>케이스 ID<input data-k="id" class="short"></label>
+              <label>판당 제한 시간<span class="unit"><input data-k="timeoutSec" type="number" min="30" class="short">초 · 로딩·되감기 시간 빼고 · 넘으면 그만두기로 끝내고 다음 판</span></label>
+              <label>카드 시드<input data-k="seed" type="number" min="0" placeholder="비우면 매번 새로" class="short"></label>
+              <label>입력 시드<input data-in="seed" type="number" min="0" placeholder="비우면 매번 새로" class="short"></label>
+            </div>
+          </details>
+          <details class="sect">
+            <summary>문장으로 만들기 <span class="muted">Claude</span></summary>
+            <textarea id="rwNl" rows="2" placeholder="예: champions0001 에서 부활하고 3초 뒤 되감기, 5판, 많이 누르기"></textarea>
+            <div class="row"><button id="rwNlGo">초안 만들기</button><span id="rwNlStatus" class="muted"></span></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- 아웃게임 -->
+    <section id="tab-outgame" class="tab">
+      <div class="toolbar">
+        <label>묶음 <select id="ogSuite"></select></label>
+        <label><input id="ogOnlyAuto" type="checkbox" checked> 자동화 가능한 것만</label>
+        <button id="ogAll">모두 선택</button><button id="ogNone">모두 해제</button>
+        <span id="ogStatus" class="muted"></span>
+      </div>
+      <table class="grid" id="ogTable"><thead><tr><th></th><th>id</th><th>제목</th><th>구분</th><th>단계</th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <!-- 실행 -->
+    <section id="tab-run" class="tab workspace">
+      <div class="toolbar run-head">
+        <select id="runKind"><option value="rewind">되감기</option><option value="outgame">아웃게임</option></select>
+        <strong id="runSuiteLabel"></strong>
+        <span class="sep"></span>
+        <label><input type="checkbox" class="runPlat" value="ios" checked> iOS</label>
+        <label><input type="checkbox" class="runPlat" value="aos" checked> Android</label>
+        <span class="spacer"></span>
+        <button id="runStop" title="iOS 는 중지하면 게임도 함께 끝난다">중지</button>
+        <button id="runStart" class="primary">테스트 시작</button>
+      </div>
+      <details class="run-opts">
+        <summary>실행 옵션</summary>
+        <label id="runRelaunchWrap"><input id="runRelaunch" type="checkbox"> 앱 다시 띄우기(아웃게임)</label>
+      </details>
+      <div class="logs" id="runPanels">
+        <div class="run-panel" data-platform="ios">
+          <div class="rp-head"><h3>iOS</h3><span id="state-ios" class="badge">대기</span><span class="spacer"></span><span id="elapsed-ios" class="muted mono"></span><button class="rp-report" hidden>리포트 보기</button></div>
+          <div class="rp-now" id="now-ios">대기 중</div>
+          <div class="rp-counts" id="counts-ios"></div>
+          <details class="rp-log"><summary>상세 로그</summary><pre id="log-ios" class="log"></pre></details>
+        </div>
+        <div class="run-panel" data-platform="aos">
+          <div class="rp-head"><h3>Android</h3><span id="state-aos" class="badge">대기</span><span class="spacer"></span><span id="elapsed-aos" class="muted mono"></span><button class="rp-report" hidden>리포트 보기</button></div>
+          <div class="rp-now" id="now-aos">대기 중</div>
+          <div class="rp-counts" id="counts-aos"></div>
+          <details class="rp-log"><summary>상세 로그</summary><pre id="log-aos" class="log"></pre></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- 리포트 -->
+    <section id="tab-reports" class="tab workspace">
+      <div class="split">
+        <aside>
+          <div class="aside-head"><span class="muted">실행 기록</span><button id="repRefresh">새로고침</button></div>
+          <ul id="repList" class="list"></ul>
+        </aside>
+        <div class="detail" id="repDetail">
+          <div id="repEmpty" class="empty" hidden><p>아직 실행 결과가 없습니다.</p><button id="repGoRun">실행 탭으로</button></div>
+          <div id="repView">
+            <div class="toolbar">
+              <strong id="repName"></strong>
+              <span class="spacer"></span>
+              <span id="repStatus" class="muted"></span>
+              <button id="repOpen">폴더 열기</button>
+            </div>
+            <div id="repCounts" class="chips"></div>
+            <div id="repAttention" hidden><h3>확인할 판</h3><div id="repDiagnose"></div></div>
+            <details class="sect" id="repFull"><summary>전체 리포트</summary><article id="repBody" class="md"></article></details>
+            <div id="repPlays"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Claude -->
+    <section id="tab-chat" class="tab workspace">
+      <div class="toolbar"><span class="muted">키트·시나리오 폴더를 보는 Claude 대화</span><span class="spacer"></span><button id="chatNew">새 대화</button></div>
+      <div id="chatLog" class="chat">
+        <div id="chatStarters" class="starters">
+          <button data-prompt="최근 되감기 리포트에서 실패한 판의 원인을 정리해줘">최근 실패 분석</button>
+          <button data-prompt="지금 되감기 묶음의 케이스를 보고 빠진 경우를 제안해줘">케이스 보강 제안</button>
+          <button data-prompt="docs 에 지금 되감기 테스트 시나리오를 md 로 정리해줘">시나리오 문서 만들기</button>
+        </div>
+      </div>
+      <div class="composer">
+        <textarea id="chatInput" rows="2" placeholder="무엇을 할까요? (⌘+Enter 로 보내기)"></textarea>
+        <button id="chatSend" class="primary">보내기</button>
+        <button id="chatStop" hidden>멈추기</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="askDialog"><form method="dialog"><p id="askLabel"></p><input id="askInput" size="40"><menu><button value="cancel">취소</button><button value="ok" class="primary">확인</button></menu></form></dialog>
+
+  <script src="../node_modules/marked/lib/marked.umd.js"></script>
+  <script src="../lib/caseModel.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

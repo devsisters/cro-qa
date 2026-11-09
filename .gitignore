@@ -1,3 +1,9 @@
 runs/
 .DS_Store
 *.tmp-*
+# QA 앱(kit/) — 각자 컴퓨터에만 두는 것
+kit/runs/
+kit/workspace/
+kit/app/node_modules/
+kit/tools/device_flows/devices.json
+__pycache__/

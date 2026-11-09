@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 tools/doctor.py:*)",
+      "Bash(python3 tools/gb_device.py:*)",
+      "Bash(python3 tools/case_runner.py:*)",
+      "Bash(python3 tools/judge.py:*)",
+      "Bash(python3 tools/report.py:*)",
+      "Bash(python3 tools/sheet_import.py:*)",
+      "Bash(python3 tools/imgdiff.py:*)",
+      "Bash(python3 tools/answer_key.py list:*)",
+      "Bash(xcrun devicectl list:*)",
+      "Bash(adb devices:*)"
+    ]
+  }
+}

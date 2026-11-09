@@ -1,0 +1,985 @@
+'use strict';
+/* global qa, caseModel, marked */
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const state = { kit: '', rwFile: null, rwSuite: null, rwIndex: 0, ogFile: null, ogSuite: null, ogSelected: new Set(), presets: {}, chatSession: null, chatId: 0, repName: null };
+
+// Electron 은 window.prompt 를 지원하지 않는다 — 화면 안 대화상자로 묻는다
+function askText(label, value) {
+  return new Promise((resolve) => {
+    const dlg = $('#askDialog');
+    $('#askLabel').textContent = label;
+    $('#askInput').value = value || '';
+    dlg.onclose = () => resolve(dlg.returnValue === 'ok' ? $('#askInput').value.trim() : null);
+    dlg.showModal();
+  });
+}
+
+function toast(el, text, isError) {
+  el.textContent = text;
+  el.style.color = isError ? 'var(--fail)' : '';
+}
+
+// ---------- 탭 ----------
+function activateTab(name) {
+  $$('#tabs button').forEach((x) => { x.classList.toggle('active', x.dataset.tab === name); x.setAttribute('aria-selected', x.dataset.tab === name); });
+  $$('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${name}`));
+  if (name === 'reports') loadRuns();
+  if (name === 'run') refreshRunLabel();
+}
+$$('#tabs button').forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
+
+// ---------- 기기·설정 ----------
+const deviceRows = () => $$('#tab-devices tr[data-platform]');
+let discovering = null;
+
+function fillDeviceSelect(tr, found, saved) {
+  const select = $('.device-id', tr);
+  const options = found.map((d) => ({ id: d.id, label: `${d.connected ? '●' : '○'} ${d.name}${d.connected ? '' : ` · ${d.state}`}`, connected: d.connected, sub: [d.model !== d.name ? d.model : '', d.os ? `OS ${d.os}` : ''].filter(Boolean).join(' · ') }));
+  if (saved && !options.some((o) => o.id === saved)) options.push({ id: saved, label: `○ 저장된 기기 · 지금 안 보임 (${saved.slice(0, 12)}…)`, connected: false });
+  options.unshift({ id: '', label: options.length ? '(사용 안 함)' : '(연결된 기기 없음)', connected: false });
+  select.innerHTML = options.map((o) => `<option value="${esc(o.id)}">${esc(o.label)}</option>`).join('');
+  // 저장값이 연결돼 있으면 그대로, 아니면 처음 보이는 연결 기기를 고른다
+  const savedConnected = options.find((o) => o.id === saved && o.connected);
+  const firstConnected = options.find((o) => o.connected);
+  select.value = (savedConnected || firstConnected || { id: saved || '' }).id;
+  const showSub = () => { $('.device-sub', tr).textContent = (options.find((o) => o.id === select.value) || {}).sub || ''; };
+  showSub();
+  select.onchange = null;
+  select.addEventListener('change', showSub);
+  return select.value !== (saved || '');
+}
+
+async function saveDeviceSelection() {
+  const devices = {};
+  for (const tr of deviceRows()) devices[tr.dataset.platform] = { device: $('.device-id', tr).value };
+  await qa.devicesWrite(devices);
+}
+
+async function discoverDevices() {
+  if (discovering) return discovering;
+  discovering = (async () => {
+    $('#discoverStatus').textContent = '기기 찾는 중…';
+    try {
+      const [found, saved] = await Promise.all([qa.devicesDiscover(), qa.devicesRead()]);
+      let changed = false;
+      for (const tr of deviceRows()) changed = fillDeviceSelect(tr, found[tr.dataset.platform] || [], (saved[tr.dataset.platform] || {}).device || '') || changed;
+      if (changed) await saveDeviceSelection();
+      const n = (found.ios || []).filter((d) => d.connected).length + (found.aos || []).filter((d) => d.connected).length;
+      const errs = Object.entries(found.errors || {}).map(([k, v]) => `${k === 'aos' ? 'Android' : 'iOS'} 조회 실패: ${v}`);
+      $('#discoverStatus').textContent = [`연결된 기기 ${n}대`, ...errs].join(' · ');
+      $('#discoverStatus').style.color = errs.length ? 'var(--error)' : '';
+      for (const tr of deviceRows()) if ($('.device-id', tr).value) pingRow(tr);
+    } catch (err) {
+      $('#discoverStatus').textContent = `기기 찾기 실패: ${err.message}`;
+    } finally {
+      discovering = null;
+    }
+  })();
+  return discovering;
+}
+
+async function loadDevices() {
+  const info = await qa.kitInfo();
+  state.kit = info.kit;
+  $('#kitPath').textContent = info.kit.split('/').pop();
+  $('#kitPath').title = info.kit;
+  $('#setPython').value = info.settings.python;
+  $('#setClaude').value = info.settings.claude;
+  $('#setDeveloperDir').value = info.settings.developerDir;
+  await discoverDevices();
+}
+$('#discoverDevices').addEventListener('click', () => discoverDevices());
+deviceRows().forEach((tr) => $('.device-id', tr).addEventListener('change', async () => {
+  await saveDeviceSelection();
+  setDeviceState(tr, '-', 'muted');
+  if ($('.device-id', tr).value) pingRow(tr);
+}));
+// 꽂고 빼는 것을 따라가도록 기기 탭을 보는 동안 15초마다 다시 찾는다
+setInterval(() => { if ($('#tab-devices').classList.contains('active') && !document.hidden) discoverDevices(); }, 15000);
+$('#saveSettings').addEventListener('click', async () => {
+  await qa.settingsWrite({ python: $('#setPython').value, claude: $('#setClaude').value, developerDir: $('#setDeveloperDir').value });
+  alertInline($('#saveSettings'), '저장했습니다');
+});
+function setDeviceState(tr, text, cls, hint, needLaunch) {
+  const cell = $('.device-status', tr);
+  cell.textContent = text;
+  cell.className = `device-status ${cls || 'muted'}`;
+  $('.device-hint', tr).textContent = hint || '';
+  $('.launch', tr).classList.toggle('primary', Boolean(needLaunch));
+}
+async function pingRow(tr) {
+  const cell = $('.device-status', tr);
+  if (!$('.device-id', tr).value) { setDeviceState(tr, '기기 없음', 'muted', '케이블로 연결하면 자동으로 찾는다'); return; }
+  if (tr.dataset.pinging) return;
+  tr.dataset.pinging = '1';
+  setDeviceState(tr, '확인 중…', 'muted');
+  try {
+    const r = await qa.devicePing(tr.dataset.platform);
+    if (r.ok) {
+      const scene = await qa.deviceScene(tr.dataset.platform);
+      setDeviceState(tr, '● 연결됨', 'v-PASS', `화면 ${(scene.result || {}).top || '?'}`);
+    } else {
+      const refused = /refused|unavailable/i.test(r.error || '');
+      setDeviceState(tr, '연결 모드 필요', 'v-ERROR', refused ? '테스트 시작은 자동으로 연결 모드로 실행한다' : String(r.error || '').slice(0, 120), true);
+    }
+  } finally {
+    delete tr.dataset.pinging;
+  }
+}
+$$('#tab-devices .ping').forEach((b) => b.addEventListener('click', () => pingRow(b.closest('tr'))));
+$$('#tab-devices .launch').forEach((b) => b.addEventListener('click', async () => {
+  const tr = b.closest('tr');
+  const cell = $('.device-status', tr);
+  if (!$('.device-id', tr).value) { setDeviceState(tr, '기기를 먼저 고른다', 'muted'); return; }
+  b.disabled = true;
+  setDeviceState(tr, '게임 띄우는 중…', 'muted');
+  try {
+    const r = await qa.deviceLaunch(tr.dataset.platform);
+    if (!r.ok) throw new Error(r.error || '실행 실패');
+    // 게임이 켜지고 브리지가 열릴 때까지 기다린다
+    for (let i = 0; i < 15; i += 1) {
+      await new Promise((res) => setTimeout(res, 3000));
+      cell.textContent = `연결 기다리는 중… ${(i + 1) * 3}초`;
+      const p = await qa.devicePing(tr.dataset.platform);
+      if (p.ok) { await pingRow(tr); return; }
+    }
+    setDeviceState(tr, '연결 안 됨', 'v-FAIL', '게임은 떴지만 45초 안에 연결되지 않았다 — DEBUG 빌드인지 「준비」 탭에서 확인한다', true);
+  } catch (err) {
+    setDeviceState(tr, '실행 실패', 'v-FAIL', String(err.message).slice(0, 160), true);
+  } finally {
+    b.disabled = false;
+  }
+}));
+
+// ---------- 준비(처음 세팅) ----------
+let setupBusy = false;
+async function runSetupCheck() {
+  if (setupBusy) return;
+  setupBusy = true;
+  $('#setupStatus').textContent = '점검 중…(기기 조회 때문에 10~30초)';
+  $('#setupRecheck').disabled = true;
+  try {
+    const rows = await qa.setupCheck();
+    renderSetup(rows.filter((r) => r.status !== 'OK'));
+    $('#setupSection').hidden = rows.every((r) => r.status === 'OK') && $('#setupLog').hidden;
+    const fail = rows.filter((r) => r.status === 'FAIL').length;
+    const warn = rows.filter((r) => r.status === 'WARN').length;
+    $('#setupStatus').textContent = fail ? `고칠 것 ${fail}개 · 확인할 것 ${warn}개` : (warn ? `필수는 통과 · 확인할 것 ${warn}개` : '모두 준비됨');
+    $('#setupBadge').textContent = fail ? String(fail) : '';
+    $('#setupBadge').style.color = fail ? 'var(--fail)' : '';
+    return { fail, warn };
+  } catch (err) {
+    $('#setupStatus').textContent = `점검 실패: ${err.message}`;
+    return null;
+  } finally {
+    setupBusy = false;
+    $('#setupRecheck').disabled = false;
+  }
+}
+
+function renderSetup(rows) {
+  const order = { FAIL: 0, WARN: 1, OK: 2 };
+  rows.sort((a, b) => order[a.status] - order[b.status]);
+  $('#setupRows').innerHTML = rows.map((r, i) => `<tr>
+    <td class="st-${r.status}">${{ OK: '준비됨', WARN: '확인', FAIL: '필요' }[r.status]}</td>
+    <td>${esc(r.title)}</td><td class="muted">${esc(r.need)}</td><td>${esc(r.detail)}</td>
+    <td class="fix">${esc(r.fix)}${r.actions.map((a, j) => {
+      const btns = [];
+      if (a.kind === 'run') btns.push(`<button data-i="${i}" data-j="${j}" data-do="run">${esc(a.label)}</button><button data-i="${i}" data-j="${j}" data-do="terminal">터미널에서</button>`);
+      if (a.kind === 'terminal') btns.push(`<button data-i="${i}" data-j="${j}" data-do="terminal">${esc(a.label)} (터미널에서)</button>`);
+      if (a.kind === 'open') btns.push(`<button data-i="${i}" data-j="${j}" data-do="open">${esc(a.label)}</button>`);
+      if (a.kind === 'apply') btns.push(`<button data-i="${i}" data-j="${j}" data-do="apply">${esc(a.label)}</button>`);
+      if (a.command) btns.push(`<br><code>${esc(a.command.split('\n')[0])}</code> <button data-i="${i}" data-j="${j}" data-do="copy">명령 복사</button>`);
+      return `<div>${btns.join('')}</div>`;
+    }).join('')}</td></tr>`).join('');
+  $$('#setupRows button').forEach((b) => b.addEventListener('click', async () => {
+    const a = rows[b.dataset.i].actions[b.dataset.j];
+    const how = b.dataset.do;
+    try {
+      if (how === 'copy') { await navigator.clipboard.writeText(a.command); alertInline(b, '복사했다'); return; }
+      if (how === 'apply') { await qa.settingsWrite(a.settings); await loadDevices(); await runSetupCheck(); return; }
+      if (how === 'run') {
+        $('#setupLog').hidden = false;
+        $$('#setupRows button').forEach((x) => { x.disabled = x.dataset.do !== 'copy'; });
+        await qa.setupAction(a.id);
+        return;
+      }
+      if (how === 'terminal') {
+        await qa.setupAction(a.id, 'terminal');
+        $('#setupStatus').textContent = '터미널 창에서 진행한 뒤 「다시 점검」을 누른다';
+      }
+      if (how === 'open') {
+        await qa.setupAction(a.id);
+        $('#setupStatus').textContent = '설치한 뒤 「다시 점검」을 누른다';
+      }
+    } catch (err) {
+      $('#setupStatus').textContent = `실패: ${err.message}`;
+    }
+  }));
+}
+// ---------- 시나리오 저장소(팀 git) ----------
+let scenBusy = false;
+async function refreshScenario() {
+  let st;
+  try { st = await qa.scenarioStatus(); } catch (err) { $('#scenMsg').textContent = err.message; return null; }
+  if (!st.ready) {
+    $('#scenWhere').textContent = st.repo;
+    $('#scenState').textContent = '· 아직 안 받음 — 「준비」 탭에서 받는다';
+    $('#scenSetup').innerHTML = `<p>팀 저장소 <strong>${esc(st.repo)}</strong> 를 이 컴퓨터에 받아 둔다. 케이스·시나리오 문서(md)·프리셋을 여기서 주고받는다. 실행 결과·기기 ID·앱 설정은 이 컴퓨터에만 남는다.</p>
+      <div class="toolbar"><button id="scenConnect" class="primary">받기</button><span class="muted">위치: ${esc(st.defaultDir)}</span>
+      <button id="scenConnectPick">다른 위치 / 이미 받은 폴더 고르기</button></div>
+      <p class="muted">GitHub 로그인이 안 돼 있으면 받기가 실패한다 — 아래 「처음 세팅」의 GitHub 줄부터 끝낸다.</p>`;
+  } else {
+    const parts = [st.changed.length ? `바뀐 파일 ${st.changed.length}개` : '바뀐 파일 없음'];
+    if (st.ahead) parts.push(`올릴 기록 ${st.ahead}개`);
+    if (st.behind) parts.push(`받을 기록 ${st.behind}개`);
+    if (!st.upstream) parts.push('팀 저장소에 아직 안 올림');
+    $('#scenWhere').textContent = st.repo;
+    $('#scenState').textContent = '· ' + parts.join(' · ');
+    $('#scenSetup').innerHTML = `<p><strong>${esc(st.repo)}</strong> 를 받아 두었다 · <code>${esc(st.dir)}</code>
+      <button id="scenOpen2">폴더 열기</button> <button id="scenConnectPick">위치 바꾸기</button></p>`;
+  }
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  bind('scenConnect', () => scenDo('받기', () => qa.scenarioConnect(false), { reload: true }));
+  bind('scenConnectPick', () => scenDo('받기', () => qa.scenarioConnect(true), { reload: true }));
+  bind('scenOpen2', () => qa.scenarioOpen());
+  $('#scenPull').disabled = scenBusy || !st.ready;
+  $('#scenPush').disabled = scenBusy || !st.ready || !(st.changed.length || st.ahead || !st.upstream);
+  $('#scenOpen').disabled = !st.ready;
+  return st;
+}
+
+// 받은 것에 앱 코드가 있으면 다시 시작해야 반영된다 — 앱을 켤 때 받은 것이면 바로, 쓰는 중이면 버튼으로
+let pendingDeps = false;
+async function handleAppUpdate(r, auto) {
+  if (!r || !r.appUpdated) return;
+  pendingDeps = pendingDeps || !!r.depsUpdated;
+  if (auto && !(await qa.runActive()).length) {
+    $('#scenMsg').textContent = pendingDeps ? '앱 새 버전 — 필요한 구성요소를 설치하고 다시 시작합니다…' : '앱 새 버전 — 다시 시작합니다…';
+    try { await qa.appRestart(pendingDeps); return; } catch (err) { $('#scenMsg').textContent = err.message; }
+  }
+  $('#appUpdate').hidden = false;
+}
+$('#appRestart').addEventListener('click', async () => {
+  $('#appRestart').disabled = true;
+  $('#scenMsg').textContent = pendingDeps ? '구성요소 설치 후 다시 시작합니다…' : '다시 시작합니다…';
+  try { await qa.appRestart(pendingDeps); } catch (err) { $('#scenMsg').textContent = err.message; $('#appRestart').disabled = false; }
+});
+
+async function scenDo(label, fn, { reload = false, auto = false } = {}) {
+  if (scenBusy) return;
+  scenBusy = true;
+  $('#scenMsg').textContent = `${label} 중…`;
+  $('#scenMsg').style.color = '';
+  try {
+    const r = await fn();
+    if (r === null) { $('#scenMsg').textContent = ''; return; }
+    $('#scenMsg').textContent = r && r.note ? r.note : `${label} 완료`;
+    clearTimeout(state.scenMsgTimer);
+    state.scenMsgTimer = setTimeout(() => { if (!scenBusy) $('#scenMsg').textContent = ''; }, 5000);
+    if (reload) { await loadPresets(); await loadSuites(); }
+    await handleAppUpdate(r, auto);
+  } catch (err) {
+    $('#scenMsg').textContent = err.message;
+    $('#scenMsg').style.color = 'var(--fail)';
+  } finally {
+    scenBusy = false;
+    await refreshScenario();
+  }
+}
+
+$('#scenPull').addEventListener('click', () => scenDo('최신 받기', () => qa.scenarioPull(), { reload: true }));
+$('#scenPush').addEventListener('click', async () => {
+  const st = await refreshScenario();
+  let message = null;
+  if (st && st.changed.length) {
+    message = await askText(`무엇을 바꿨나요? 한 줄로 적어 주세요. (바뀐 파일: ${st.changed.slice(0, 5).map((c) => c.file).join(', ')}${st.changed.length > 5 ? ' …' : ''})`, '');
+    if (!message) return;
+  }
+  await scenDo('변경 공유', () => qa.scenarioPush(message), { reload: true });
+});
+$('#scenOpen').addEventListener('click', () => qa.scenarioOpen());
+setInterval(() => { if (!document.hidden && !scenBusy) refreshScenario(); }, 10000);
+// 팀 저장소에 새 기록(앱 업데이트 포함)이 올라왔는지 가끔 확인해 「받을 기록 N개」로 보여 준다
+setInterval(() => { if (!scenBusy) qa.scenarioFetch().then(() => refreshScenario()).catch(() => {}); }, 5 * 60 * 1000);
+
+qa.on('setup:line', (line) => { const log = $('#setupLog'); log.textContent += line + '\n'; log.scrollTop = log.scrollHeight; });
+qa.on('setup:exit', async ({ code }) => {
+  $('#setupLog').textContent += `\n— 끝남 (exit ${code}) —\n`;
+  await runSetupCheck();
+});
+$('#setupRecheck').addEventListener('click', () => runSetupCheck());
+function alertInline(button, text) {
+  const old = button.textContent;
+  button.textContent = text;
+  setTimeout(() => { button.textContent = old; }, 1200);
+}
+
+// ---------- 되감기 케이스 ----------
+async function loadSuites() {
+  const list = await qa.casesList();
+  const fill = (sel, kind, keep) => {
+    sel.innerHTML = list.filter((x) => x.kind === kind).map((x) => `<option value="${esc(x.file)}">${esc(x.file)} (${x.count})</option>`).join('');
+    if (keep && list.some((x) => x.file === keep)) sel.value = keep;
+  };
+  fill($('#rwSuite'), 'rewind', state.rwFile);
+  fill($('#ogSuite'), 'outgame', state.ogFile);
+  if ($('#rwSuite').value) await openRewindSuite($('#rwSuite').value);
+  if ($('#ogSuite').value) await openOutgameSuite($('#ogSuite').value);
+}
+$('#rwSuite').addEventListener('change', () => openRewindSuite($('#rwSuite').value));
+$('#ogSuite').addEventListener('change', () => openOutgameSuite($('#ogSuite').value));
+
+async function openRewindSuite(file) {
+  state.rwFile = file;
+  state.rwSuite = await qa.casesRead(file);
+  state.rwSuite.cases = (state.rwSuite.cases || []).map(caseModel.normalizeCase);
+  state.rwIndex = 0;
+  renderCaseList();
+  renderForm();
+  setDirty(false);
+  refreshRunLabel();
+}
+
+function currentCase() {
+  return state.rwSuite && state.rwSuite.cases[state.rwIndex];
+}
+
+function renderCaseList() {
+  const cases = (state.rwSuite && state.rwSuite.cases) || [];
+  $('#rwCount').textContent = `케이스 ${cases.length}`;
+  $('#rwCases').innerHTML = cases.map((c, i) => {
+    const bad = caseModel.validateCase(c).length;
+    return `<li data-i="${i}" class="${i === state.rwIndex ? 'active' : ''}"><span class="li-title">${c.title ? esc(c.title) : '<span class="muted">제목 없는 케이스</span>'}</span> <span class="li-id">${esc(c.id)}</span>`
+      + `<small>${esc(c.map)} · ${c.plays}판 · 조건 ${(c.triggers || []).length}개${bad ? ` · <span class="v-FAIL">고칠 것 ${bad}</span>` : ''}</small></li>`;
+  }).join('') || '<li class="muted">케이스가 없다 — 「+ 추가」</li>';
+  $$('#rwCases li[data-i]').forEach((li) => li.addEventListener('click', () => {
+    readForm();
+    state.rwIndex = Number(li.dataset.i);
+    renderCaseList();
+    renderForm();
+  }));
+}
+
+// 카드 이름 — 기기에서 한 번 받아 두고 칸에는 「이름 (id)」로 보여 준다
+let cardNames = {};
+let cardIdByName = {};
+const cardLabel = (id) => (cardNames[id] ? `${cardNames[id]} (${id})` : String(id));
+function applyCards(cards) {
+  cardNames = {};
+  cardIdByName = {};
+  for (const cat of ['cookie', 'pet', 'treasure']) {
+    for (const { id, name } of cards[cat] || []) {
+      cardNames[id] = name;
+      if (name && !(name in cardIdByName)) cardIdByName[name] = id;
+    }
+  }
+  const opts = (list) => (list || []).map((x) => `<option value="${esc(cardLabel(x.id))}"></option>`).join('');
+  const none = '<option value="없음"></option>';
+  $('#cookieList').innerHTML = opts(cards.cookie);
+  $('#cookie2List').innerHTML = none + opts(cards.cookie);
+  $('#petList').innerHTML = opts(cards.pet);
+  $('#treasureList').innerHTML = none + opts(cards.treasure);
+}
+try {
+  const saved = JSON.parse(localStorage.getItem('qa.cardNames') || 'null');
+  if (saved) applyCards(saved);
+} catch (_) { /* 기억해 둔 목록이 없으면 id 로만 쓴다 */ }
+
+const cardText = (v) => (v === 'random' || v === undefined ? '' : v === 0 ? '없음' : cardLabel(v));
+const cardValue = (s) => {
+  const t = String(s).trim();
+  if (!t || t === 'random' || t === '무작위') return 'random';
+  if (t === '없음') return 0;
+  const m = /\((\d+)\)\s*$/.exec(t);
+  if (m) return Number(m[1]);
+  const n = Number(t);
+  if (Number.isInteger(n)) return n;
+  return t in cardIdByName ? cardIdByName[t] : t;
+};
+
+function renderForm() {
+  const c = currentCase();
+  $('#rwForm').style.visibility = c ? 'visible' : 'hidden';
+  if (!c) return;
+  for (const el of $$('[data-k]', $('#rwForm'))) el.value = c[el.dataset.k] ?? '';
+  for (const key of ['cookie1', 'cookie2', 'pet']) $(`[data-card="${key}"]`).value = cardText(c.cards[key]);
+  c.cards.treasures.forEach((v, i) => { $(`[data-card="t${i}"]`).value = cardText(v); });
+  const inp = c.input || { mode: 'none' };
+  for (const el of $$('[data-in]', $('#rwForm'))) {
+    const v = inp[el.dataset.in];
+    if (el.type === 'checkbox') el.checked = v !== false;
+    else el.value = v ?? (el.dataset.in === 'mode' ? 'random' : '');
+  }
+  renderTriggers(c.triggers);
+  renderCardSummary(c);
+  showErrors(caseModel.validateCase(c));
+}
+
+function renderCardSummary(c) {
+  const fixed = ['cookie1', 'cookie2', 'pet'].filter((k) => c.cards[k] !== 'random').length + c.cards.treasures.filter((t) => t !== 'random').length;
+  $('#rwCardSummary').textContent = fixed ? `고정 ${fixed}개` : '모두 무작위';
+}
+
+function setDirty(dirty) {
+  state.rwDirty = dirty;
+  $('#rwStatus').textContent = dirty ? '● 저장하지 않은 변경' : '';
+  $('#rwStatus').style.color = dirty ? 'var(--warn)' : '';
+  $('#rwCheck').textContent = dirty ? '저장 후 검사' : '케이스 검사';
+}
+
+// 게임 되감기 창의 「5초 전·10초 전·15초 전」과 같다 — 그만큼 쌓이지 않았으면 고를 수 있는 가장 앞 지점
+const POINTS = [[0, '기본값'], [1, '5초 전'], [2, '10초 전'], [3, '15초 전']];
+function renderTriggers(triggers) {
+  $('#rwTriggers').innerHTML = triggers.map((t) => `<tr>
+    <td><select class="tt">${caseModel.TRIGGERS.map((x) => `<option value="${x}" ${x === t.type ? 'selected' : ''}>${{ interval: 'N초마다 반복', afterRevive: '체력 0 부활 뒤', afterBonusReturn: '보너스타임 복귀 뒤' }[x]}</option>`).join('')}</select>
+      <div class="muted tiny">${t.type === 'interval' ? '시작·직전 되감기 기준으로 반복' : '그 일이 일어난 뒤 기다릴 시간'}</div></td>
+    <td><input class="td short" type="number" min="0" step="0.5" value="${esc(t.delaySec ?? 0)}" aria-label="${t.type === 'interval' ? '반복 간격(초)' : '대기 시간(초)'}"></td>
+    <td><input class="tc short" type="number" min="1" value="${esc(t.count ?? 1)}" aria-label="판당 횟수"></td>
+    <td><select class="tp" aria-label="되감을 지점">${POINTS.map(([v, l]) => `<option value="${v}" ${Number(t.point ?? 0) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+    <td><button class="tdel" title="이 조건 삭제" aria-label="이 조건 삭제">✕</button></td></tr>`).join('');
+  $$('#rwTriggers .tdel').forEach((b, i) => b.addEventListener('click', () => {
+    readForm();
+    currentCase().triggers.splice(i, 1);
+    renderForm();
+    setDirty(true);
+  }));
+}
+
+function num(v) {
+  if (v === '' || v === null || v === undefined) return undefined;
+  const n = Number(v);
+  return Number.isNaN(n) ? v : n;
+}
+
+function readForm() {
+  const c = currentCase();
+  if (!c) return;
+  for (const el of $$('[data-k]', $('#rwForm'))) {
+    const k = el.dataset.k;
+    c[k] = ['plays', 'timeoutSec', 'seed'].includes(k) ? num(el.value) : el.value.trim();
+  }
+  c.cards = {
+    cookie1: cardValue($('[data-card="cookie1"]').value),
+    cookie2: cardValue($('[data-card="cookie2"]').value),
+    pet: cardValue($('[data-card="pet"]').value),
+    treasures: [0, 1, 2].map((i) => cardValue($(`[data-card="t${i}"]`).value)),
+  };
+  c.triggers = $$('#rwTriggers tr').map((tr) => {
+    const t = { type: $('.tt', tr).value, delaySec: num($('.td', tr).value) ?? 0, count: num($('.tc', tr).value) };
+    const point = Number($('.tp', tr).value);
+    if (point) t.point = point;
+    return t;
+  });
+  const input = {};
+  for (const el of $$('[data-in]', $('#rwForm'))) {
+    if (el.type === 'checkbox') input[el.dataset.in] = el.checked;
+    else if (el.dataset.in === 'mode') input.mode = el.value;
+    else if (el.dataset.in === 'recording') { if (el.value.trim()) input.recording = el.value.trim(); }
+    else if (el.value !== '') input[el.dataset.in] = num(el.value);
+  }
+  c.input = input.mode === 'none' ? { mode: 'none' } : input;
+  renderCardSummary(c);
+  showErrors(caseModel.validateCase(c));
+}
+
+function showErrors(errs) {
+  $('#rwErrors').innerHTML = errs.map((e) => `<li>${esc(e)}</li>`).join('');
+}
+$('#rwForm').addEventListener('change', (e) => {
+  readForm();
+  renderCaseList();
+  if (e.target.classList.contains('tt')) renderForm(); // 조건 종류에 따라 설명이 바뀐다
+  setDirty(true);
+});
+
+$('#rwAddCase').addEventListener('click', () => {
+  if (!state.rwSuite) return;
+  readForm();
+  const n = state.rwSuite.cases.length + 1;
+  const c = caseModel.defaultCase(`RW-${String(n).padStart(2, '0')}`);
+  const preset = state.presets[$('#rwPreset').value];
+  state.rwSuite.cases.push(preset ? caseModel.applyPreset(c, preset) : c);
+  state.rwIndex = state.rwSuite.cases.length - 1;
+  renderCaseList();
+  renderForm();
+  setDirty(true);
+});
+$('#rwDelCase').addEventListener('click', () => {
+  if (!state.rwSuite || !currentCase()) return;
+  if (!confirm(`「${currentCase().title || currentCase().id}」 케이스를 삭제할까요? 저장해야 파일에 반영됩니다.`)) return;
+  state.rwSuite.cases.splice(state.rwIndex, 1);
+  state.rwIndex = Math.max(0, state.rwIndex - 1);
+  renderCaseList();
+  renderForm();
+  setDirty(true);
+});
+$('#rwAddTrigger').addEventListener('click', () => {
+  readForm();
+  currentCase().triggers.push({ type: 'afterRevive', delaySec: 3, count: 1 });
+  renderForm();
+  setDirty(true);
+});
+$('#rwNewSuite').addEventListener('click', async () => {
+  const name = await askText('새 묶음 파일 이름(영문·숫자·-, 확장자 없이)', 'rewind-new');
+  if (!name) return;
+  const file = `${name.replace(/\.json$/, '')}.json`;
+  const suite = { suite: name, kind: 'rewind', cases: [caseModel.defaultCase('RW-01')] };
+  try {
+    await qa.casesWrite(file, suite);
+    state.rwFile = file;
+    await loadSuites();
+  } catch (e) { toast($('#rwStatus'), e.message, true); }
+});
+async function saveRewind() {
+  readForm();
+  const errs = caseModel.validateSuite(state.rwSuite);
+  if (errs.length) { showErrors(errs); toast($('#rwStatus'), '고칠 것이 있어 저장하지 않았습니다', true); return false; }
+  try {
+    await qa.casesWrite(state.rwFile, state.rwSuite);
+    setDirty(false);
+    toast($('#rwStatus'), '저장했습니다');
+    return true;
+  } catch (e) { toast($('#rwStatus'), e.message, true); return false; }
+}
+$('#rwSave').addEventListener('click', saveRewind);
+$('#rwCheck').addEventListener('click', async () => {
+  if (state.rwDirty && !(await saveRewind())) return;
+  const r = await qa.casesCheck(state.rwFile);
+  toast($('#rwStatus'), r.ok ? `검사 통과 · 케이스 ${r.cases}개` : `검사 실패: ${(r.errors || []).join(' / ')}`, !r.ok);
+});
+$('#rwGoRun').addEventListener('click', async () => {
+  if (state.rwDirty && !(await saveRewind())) return;
+  $('#runKind').value = 'rewind';
+  activateTab('run');
+});
+$('#rwLoadCards').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const platform = ['ios', 'aos'].find((p) => $(`.runPlat[value="${p}"]`).checked) || 'ios';
+  toast($('#rwStatus'), `${platform} 에서 카드 목록 받는 중…`);
+  try {
+    const cards = await qa.deviceCards(platform);
+    const named = ['cookie', 'pet', 'treasure'].some((cat) => (cards[cat] || []).some((x) => x.name));
+    if (!named) throw new Error('기기에 깔린 게임이 카드 이름을 주지 않는 옛 빌드다 — 새 빌드를 설치한 뒤 다시 누른다');
+    try { localStorage.setItem('qa.cardNames', JSON.stringify(cards)); } catch (_) { /* 이번 실행 동안만 쓴다 */ }
+    if (currentCase()) readForm();
+    applyCards(cards);
+    renderForm();
+    toast($('#rwStatus'), `쿠키 ${cards.cookie.length} · 펫 ${cards.pet.length} · 보물 ${cards.treasure.length} — 카드 칸에 이름을 입력하면 목록이 뜬다`);
+  } catch (err) { toast($('#rwStatus'), err.message, true); }
+});
+$('#rwLoadMaps').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const platform = ['ios', 'aos'].find((p) => $(`.runPlat[value="${p}"]`).checked) || 'ios';
+  toast($('#rwStatus'), `${platform} 에서 맵 목록 받는 중…`);
+  try {
+    const maps = await qa.deviceMaps(platform);
+    $('#mapList').innerHTML = maps.map((m) => `<option value="${esc(m)}">`).join('');
+    toast($('#rwStatus'), `맵 ${maps.length}개 — 맵 칸에 입력하면 목록이 뜬다`);
+  } catch (e) { toast($('#rwStatus'), e.message, true); }
+});
+
+// 프리셋
+async function loadPresets() {
+  state.presets = await qa.presetsRead();
+  $('#rwPreset').innerHTML = Object.keys(state.presets).map((k) => `<option>${esc(k)}</option>`).join('');
+}
+$('#rwApplyPreset').addEventListener('click', () => {
+  readForm();
+  const preset = state.presets[$('#rwPreset').value];
+  if (!preset) return;
+  state.rwSuite.cases[state.rwIndex] = caseModel.applyPreset(currentCase(), preset);
+  renderForm();
+  setDirty(true);
+});
+$('#rwSavePreset').addEventListener('click', async () => {
+  readForm();
+  const name = await askText('프리셋 이름', $('#rwPreset').value || '내 프리셋');
+  if (!name) return;
+  state.presets[name] = caseModel.presetFromCase(currentCase());
+  await qa.presetsWrite(state.presets);
+  await loadPresets();
+  $('#rwPreset').value = name;
+});
+
+// Claude 로 채우기
+$('#rwNlGo').addEventListener('click', async () => {
+  readForm();
+  const request = $('#rwNl').value.trim();
+  if (!request) return;
+  toast($('#rwNlStatus'), 'Claude 가 초안을 만드는 중…');
+  $('#rwNlGo').disabled = true;
+  try {
+    const r = await qa.claudeCaseDraft(request, currentCase());
+    state.rwSuite.cases[state.rwIndex] = r.draft;
+    renderCaseList();
+    renderForm();
+    setDirty(true);
+    toast($('#rwNlStatus'), `채웠다 — 확인 뒤 「저장」${r.errors.length ? ` (고칠 것 ${r.errors.length}개)` : ''}${r.cost ? ` · $${r.cost.toFixed(3)}` : ''}`);
+  } catch (e) { toast($('#rwNlStatus'), e.message, true); }
+  $('#rwNlGo').disabled = false;
+});
+
+// ---------- 아웃게임 ----------
+async function openOutgameSuite(file) {
+  state.ogFile = file;
+  state.ogSuite = await qa.casesRead(file);
+  state.ogSelected = new Set((state.ogSuite.cases || []).filter((c) => c.auto !== false && (c.steps || []).length).map((c) => c.id));
+  renderOutgame();
+  refreshRunLabel();
+}
+function renderOutgame() {
+  const onlyAuto = $('#ogOnlyAuto').checked;
+  const cases = ((state.ogSuite && state.ogSuite.cases) || []).filter((c) => !onlyAuto || (c.auto !== false && (c.steps || []).length));
+  $('#ogTable tbody').innerHTML = cases.map((c) => `<tr>
+    <td><input type="checkbox" data-id="${esc(c.id)}" ${state.ogSelected.has(c.id) ? 'checked' : ''}></td>
+    <td>${esc(c.id)}</td><td>${esc(c.title)}</td><td>${esc((c.plan || {}).class || '')}</td><td>${(c.steps || []).length ? (c.steps || []).length : '<span class="muted">실행 단계 없음</span>'}</td></tr>`).join('');
+  $$('#ogTable input[data-id]').forEach((cb) => cb.addEventListener('change', () => {
+    if (cb.checked) state.ogSelected.add(cb.dataset.id); else state.ogSelected.delete(cb.dataset.id);
+    $('#ogStatus').textContent = `${state.ogSelected.size}개 선택`;
+  }));
+  $('#ogStatus').textContent = `${state.ogSelected.size}개 선택`;
+}
+$('#ogOnlyAuto').addEventListener('change', renderOutgame);
+$('#ogAll').addEventListener('click', () => { $$('#ogTable input[data-id]').forEach((cb) => state.ogSelected.add(cb.dataset.id)); renderOutgame(); });
+$('#ogNone').addEventListener('click', () => { state.ogSelected.clear(); renderOutgame(); });
+
+// ---------- 실행 ----------
+function refreshRunLabel() {
+  const kind = $('#runKind').value;
+  $('#runRelaunchWrap').style.display = kind === 'outgame' ? '' : 'none';
+  $('#runSuiteLabel').textContent = kind === 'rewind'
+    ? `${(state.rwFile || '-').replace(/\.json$/, '')} · 케이스 ${((state.rwSuite || {}).cases || []).length}개`
+    : `${(state.ogFile || '-').replace(/\.json$/, '')} · 선택 ${state.ogSelected.size}개`;
+  syncRunPanels();
+}
+function syncRunPanels() {
+  const on = $$('.runPlat').filter((x) => x.checked).map((x) => x.value);
+  const busy = new Set(state.runBusy || []);
+  let shown = 0;
+  for (const panel of $$('.run-panel')) {
+    const visible = on.includes(panel.dataset.platform) || busy.has(panel.dataset.platform) || panel.dataset.used === '1';
+    panel.hidden = !visible;
+    if (visible) shown += 1;
+  }
+  $('#runPanels').classList.toggle('one', shown <= 1);
+}
+$$('.runPlat').forEach((x) => x.addEventListener('change', syncRunPanels));
+
+// 판 진행 — 실행기 출력 「[aos] PASS   RW-01#2 …」 를 세고, 마지막 진행 줄을 보여 준다
+const runTimers = {};
+function runPanelStart(platform) {
+  const panel = $(`.run-panel[data-platform="${platform}"]`);
+  panel.dataset.used = '1';
+  panel.dataset.counts = JSON.stringify({ PASS: 0, FAIL: 0, ERROR: 0, UNSURE: 0 });
+  $('.rp-report', panel).hidden = true;
+  $(`#counts-${platform}`).innerHTML = '';
+  $(`#now-${platform}`).textContent = '시작하는 중…';
+  setRunState(platform, '실행 중', 'running');
+  const started = Date.now();
+  clearInterval(runTimers[platform]);
+  const tick = () => {
+    const sec = Math.floor((Date.now() - started) / 1000);
+    $(`#elapsed-${platform}`).textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  };
+  tick();
+  runTimers[platform] = setInterval(tick, 1000);
+  state.runBusy = [...new Set([...(state.runBusy || []), platform])];
+  syncRunPanels();
+}
+function setRunState(platform, text, kind) {
+  const el = $(`#state-${platform}`);
+  el.textContent = text;
+  el.className = `badge ${kind || ''}`;
+}
+function runPanelLine(platform, line) {
+  const m = /\]\s+(PASS|FAIL|ERROR|UNSURE|REVIEW)\s+(\S+)/.exec(line);
+  const panel = $(`.run-panel[data-platform="${platform}"]`);
+  if (m) {
+    const counts = JSON.parse(panel.dataset.counts || '{}');
+    const v = m[1] === 'REVIEW' ? 'UNSURE' : m[1];
+    counts[v] = (counts[v] || 0) + 1;
+    panel.dataset.counts = JSON.stringify(counts);
+    const label = { PASS: '통과', FAIL: '실패', ERROR: '진행 실패', UNSURE: '확인 필요' };
+    $(`#counts-${platform}`).innerHTML = Object.entries(counts).filter(([, n]) => n).map(([k, n]) => `<span class="chip v-${k}">${label[k]} ${n}</span>`).join('');
+    $(`#now-${platform}`).textContent = `${m[2].replace('#', ' · ')}판 ${label[v]}`;
+  } else if (line.trim() && !line.startsWith('{')) {
+    $(`#now-${platform}`).textContent = line.replace(/^\[\w+\]\s*/, '').slice(0, 140);
+  }
+}
+$('#runKind').addEventListener('change', refreshRunLabel);
+
+function logLine(platform, text, cls) {
+  const pre = $(`#log-${platform}`);
+  const span = document.createElement('span');
+  const m = /\b(PASS|FAIL|ERROR|UNSURE|REVIEW)\b/.exec(text);
+  span.className = cls || (m ? `v-${m[1] === 'REVIEW' ? 'UNSURE' : m[1]}` : '');
+  span.textContent = `${text}\n`;
+  pre.appendChild(span);
+  pre.scrollTop = pre.scrollHeight;
+}
+
+$('#runStart').addEventListener('click', async () => {
+  const kind = $('#runKind').value;
+  const platforms = $$('.runPlat').filter((x) => x.checked).map((x) => x.value);
+  if (!platforms.length) return;
+  if (kind === 'rewind') {
+    readForm();
+    const errs = caseModel.validateSuite(state.rwSuite);
+    if (errs.length) { alert(`되감기 케이스에 고칠 것이 있다:\n${errs.join('\n')}`); return; }
+    await qa.casesWrite(state.rwFile, state.rwSuite);
+  } else if (!state.ogSelected.size) { alert('아웃게임 케이스를 하나 이상 고른다'); return; }
+  for (const platform of platforms) {
+    $(`#log-${platform}`).textContent = '';
+    runPanelStart(platform);
+    try {
+      await qa.runStart({
+        kind, platform,
+        suiteFile: kind === 'rewind' ? state.rwFile : state.ogFile,
+        caseIds: kind === 'rewind' ? [] : [...state.ogSelected],
+        relaunch: $('#runRelaunch').checked,
+      });
+      logLine(platform, `▶ ${kind} ${kind === 'rewind' ? state.rwFile : state.ogFile} 시작`, 'muted');
+    } catch (e) {
+      logLine(platform, e.message, 'v-ERROR');
+      clearInterval(runTimers[platform]);
+      setRunState(platform, '시작 실패', 'bad');
+      $(`#now-${platform}`).textContent = e.message;
+    }
+  }
+});
+// 맵 녹화 — 고른 기기에서 이 케이스의 맵을 사람이 한 판 플레이하고, 끝나면 위치별 입력이 recordings/<맵>.json 으로 저장된다
+$('#rwRecord').addEventListener('click', async () => {
+  readForm();
+  const c = currentCase();
+  if (!c) return;
+  const platforms = $$('.runPlat').filter((x) => x.checked).map((x) => x.value);
+  if (!platforms.length) { alert('실행 탭에서 녹화할 기기를 하나 고른다'); return; }
+  const platform = platforms[0];
+  activateTab('run');
+  $(`#log-${platform}`).textContent = '';
+  runPanelStart(platform);
+  try {
+    await qa.runStart({ kind: 'rewind', platform, suiteFile: state.rwFile, recordCase: c });
+    logLine(platform, `▶ 맵 녹화 ${c.map} — 기기에서 직접 한 판 플레이하세요. 판이 끝나면 녹화가 저장됩니다`, 'muted');
+  } catch (e) {
+    logLine(platform, e.message, 'v-ERROR');
+    setRunState(platform, '시작 실패', 'bad');
+  }
+});
+$('#runStop').addEventListener('click', async () => {
+  for (const platform of ['ios', 'aos']) if (await qa.runStop(platform)) logLine(platform, '■ 중지 요청', 'muted');
+});
+qa.on('run:line', ({ platform, line }) => { logLine(platform, line); runPanelLine(platform, line); });
+qa.on('run:exit', async ({ platform, code, runName }) => {
+  clearInterval(runTimers[platform]);
+  state.runBusy = (state.runBusy || []).filter((p) => p !== platform);
+  // 종료 코드는 실행기가 끝까지 돌았는지일 뿐이고 판정 통과가 아니다 — 판정은 위 집계로 본다
+  setRunState(platform, runName ? '실행 종료' : '중단됨', runName ? 'done' : 'bad');
+  $(`#now-${platform}`).textContent = runName ? '끝났습니다 — 결과는 리포트에서 확인합니다' : `실행기가 결과 없이 끝났습니다 (상세 로그 확인)`;
+  const btn = $(`.run-panel[data-platform="${platform}"] .rp-report`);
+  btn.hidden = !runName;
+  btn.onclick = () => { activateTab('reports'); openRun(runName); };
+  logLine(platform, `■ 끝남 exit ${code}${runName ? ` → 리포트 ${runName}` : ''}`, code === 0 ? 'v-PASS' : 'v-ERROR');
+});
+
+// ---------- 리포트 ----------
+function runTitle(name) {
+  // 실행 폴더 이름: <묶음>-<ios|aos>-<YYYYMMDD-HHMMSS>
+  const m = /^(.*)-(ios|aos|mac)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}$/.exec(name);
+  if (!m) return { title: name, sub: '' };
+  return { title: m[1], sub: `${{ ios: 'iOS', aos: 'Android', mac: 'macOS' }[m[2]]} · ${m[4]}/${m[5]} ${m[6]}:${m[7]}` };
+}
+async function loadRuns() {
+  const runs = await qa.runsList();
+  $('#repList').innerHTML = runs.map((r) => {
+    const t = runTitle(r.name);
+    return `<li data-name="${esc(r.name)}" title="${esc(r.name)}" class="${r.name === state.repName ? 'active' : ''}">${esc(t.title)}<small>${esc(t.sub || new Date(r.mtime).toLocaleString())}${r.summary ? ' · 요약 있음' : ''}</small></li>`;
+  }).join('');
+  $('#repEmpty').hidden = runs.length > 0;
+  $('#repView').hidden = runs.length === 0;
+  if (!runs.some((r) => r.name === state.repName)) state.repName = null;
+  if (!state.repName && runs.length) openRun(runs[0].name);
+  $$('#repList li[data-name]').forEach((li) => {
+    li.addEventListener('click', () => openRun(li.dataset.name));
+    li.addEventListener('contextmenu', (e) => { e.preventDefault(); qa.runsMenu(li.dataset.name); });
+  });
+}
+qa.on('runs:deleted', async (name) => {
+  if (state.repName === name) state.repName = null;
+  await loadRuns();
+});
+$('#repRefresh').addEventListener('click', loadRuns);
+$('#repGoRun').addEventListener('click', () => activateTab('run'));
+
+function fileUrl(p) {
+  return `file://${p.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+async function openRun(name) {
+  state.repName = name;
+  $$('#repList li').forEach((li) => li.classList.toggle('active', li.dataset.name === name));
+  $('#repOpen').disabled = true;
+  const run = await qa.runsRead(name);
+  if (state.repName !== name) return;
+  const t = runTitle(name);
+  $('#repName').textContent = `${t.title}${t.sub ? ` · ${t.sub}` : ''}`;
+  $('#repName').title = name;
+  $('#repOpen').disabled = false;
+  // 집계는 results.json 에서 — 리포트 본문을 읽지 않아도 결과가 보이게
+  const all = [];
+  for (const c of ((run.results || {}).cases || [])) for (const p of (c.plays || [])) all.push(p);
+  const label = { PASS: '통과', FAIL: '실패', ERROR: '진행 실패', UNSURE: '확인 필요' };
+  $('#repCounts').innerHTML = all.length
+    ? [`<span class="chip">판 ${all.length}</span>`, ...['PASS', 'FAIL', 'ERROR', 'UNSURE'].map((v) => [v, all.filter((p) => p.verdict === v).length]).filter(([, n]) => n).map(([v, n]) => `<span class="chip v-${v}">${label[v]} ${n}</span>`)].join('')
+    : '';
+  // 전체 표는 결과 데이터로 직접 그린다 — 캡처 썸네일을 판 줄에 붙이고, 줄을 누르면 아래 판 칸으로 간다
+  $('#repBody').innerHTML = all.length ? summaryTable(run, all, label)
+    : (run.report ? marked.parse(run.report) : '<p class="muted">상세 리포트가 만들어지지 않았습니다</p>');
+  $('#repFull').open = true;
+  renderPlays(run, all, label);
+  $$('#repBody tr[data-i]').forEach((tr) => tr.addEventListener('click', () => focusPlay(tr.dataset.i)));
+  $$('#repBody img').forEach((img) => img.addEventListener('click', (e) => { e.stopPropagation(); window.open(img.src); }));
+  $$('#repBody .openlog').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); qa.runsOpenFile(state.repName, b.dataset.rel); }));
+  // ERROR·FAIL 판마다 진단 버튼
+  const plays = [];
+  for (const c of ((run.results || {}).cases || [])) {
+    for (const p of (c.plays || [])) if (['ERROR', 'FAIL', 'UNSURE'].includes(p.verdict)) plays.push(p);
+  }
+  $('#repAttention').hidden = !plays.length;
+  $('#repDiagnose').innerHTML = plays.map((p) => `<div class="diag"><div class="diag-head"><span class="chip v-${p.verdict}">${label[p.verdict] || p.verdict}</span> <strong>${esc(p.case)} · ${p.play}판</strong><span class="spacer"></span><button data-case="${esc(p.case)}" data-play="${p.play}">AI 진단</button></div><div class="diag-reason">${esc(p.reason)}</div><div class="md out" hidden></div></div>`).join('');
+  $$('#repDiagnose button').forEach((b) => b.addEventListener('click', async () => {
+    const out = $('.out', b.parentElement);
+    out.hidden = false;
+    out.textContent = '진단 중…';
+    b.disabled = true;
+    try {
+      const r = await qa.claudeDiagnose(name, b.dataset.case, Number(b.dataset.play));
+      out.innerHTML = marked.parse(r.text);
+    } catch (e) { out.textContent = e.message; }
+    b.disabled = false;
+  }));
+  toast($('#repStatus'), '');
+}
+// 판마다 한 칸 — 판정·조합·되감기 시각·캡처(조합/직전/직후/실패)·실패 로그
+// 실제로 돌아간 거리로 적는다(게임 창의 「N초 전」) — 고른 지점이 아직 없어 앞 지점으로 간 경우도 그대로 보인다
+const pointText = (x) => (x.at !== null && x.at !== undefined && x.to !== null && x.to !== undefined ? `${Math.round(x.at - x.to)}초 전` : '-');
+const fmtT = (t) => (t === null || t === undefined ? '-' : `${Number(t).toFixed(2)}초`);
+function comboHtml(p) {
+  const n = p.cardNames;
+  if (!n) {
+    const c = p.cards || {};
+    return esc(c.cookie1 ? `${c.cookie1} · ${c.cookie2} · ${c.pet} · ${(c.treasures || []).join(' / ')}` : '-');
+  }
+  return [['쿠키1', n.cookie1], ['쿠키2', n.cookie2], ['펫', n.pet], ['보물', n.treasures.join(' / ')]]
+    .map(([k, v]) => `<span class="combo-item"><b>${k}</b> ${esc(v)}</span>`).join('');
+}
+function summaryTable(run, all, label) {
+  const head = '<tr><th>케이스</th><th>판</th><th>판정</th><th>사유</th><th>조합</th><th>되감기(요청 → 돌아간 인게임 시각)</th><th>충돌</th><th>부활</th><th>구멍 구출</th><th>이어달리기</th><th>보너스타임</th><th>캡처</th></tr>';
+  const rows = all.map((p, i) => {
+    const base = `${run.dir}/${p.case}/play${p.play}`;
+    const rw = (p.rewinds || []).map((x) => `${fmtT(x.at)} → ${fmtT(x.to)} ${esc(x.result)}`).join('<br>') || '-';
+    const n = (type) => (p.events || []).filter((e) => e.type === type).length;
+    const crashes = n('crash');
+    const shots = (p.figures || []).map((f) => `<img class="thumb" loading="lazy" src="${fileUrl(`${base}/${f.file}`)}" title="${esc(f.label)}${f.t !== null && f.t !== undefined ? ` · ${fmtT(f.t)}` : ''}">`).join('');
+    const log = p.gameLog ? `<button class="openlog" data-rel="${esc(`${p.case}/play${p.play}/${p.gameLog}`)}">게임 로그</button>` : '';
+    return `<tr data-i="${i}" class="v-${p.verdict}" title="눌러서 아래 상세로 이동"><td>${esc(p.case)}</td><td>${p.play}</td><td><span class="chip v-${p.verdict}">${label[p.verdict] || p.verdict}</span></td><td>${esc(p.reason)}</td><td class="combo-cell">${comboHtml(p)}</td><td>${rw}</td><td>${crashes}회</td><td>${n('revive')}</td><td>${n('rescue_click')}</td><td>${n('relay_click')}</td><td>${n('bonus_enter')}</td><td class="thumbs">${shots || '-'}${log}</td></tr>`;
+  }).join('');
+  return `<table class="grid summary-table"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+function focusPlay(i) {
+  const card = $(`#play-${i}`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  card.classList.remove('flash');
+  void card.offsetWidth;
+  card.classList.add('flash');
+}
+function renderPlays(run, all, label) {
+  $('#repPlays').innerHTML = all.map((p, i) => {
+    const base = `${run.dir}/${p.case}/play${p.play}`;
+    const rewinds = (p.rewinds || []).length
+      ? `<table class="grid rewinds"><thead><tr><th>#</th><th>트리거</th><th>요청한 인게임 시각</th><th>돌아간 인게임 시각</th><th>지점</th><th>결과</th></tr></thead><tbody>${p.rewinds.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.trigger || '-')}</td><td>${fmtT(x.at)}</td><td>${fmtT(x.to)}</td><td>${pointText(x)}</td><td>${esc(x.result)}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="muted">되감기 없음</div>';
+    const figs = (p.figures || []).map((f) => `<figure><img loading="lazy" src="${fileUrl(`${base}/${f.file}`)}"><figcaption>${esc(f.label)}${f.t !== null && f.t !== undefined ? ` · ${fmtT(f.t)}` : ''}</figcaption></figure>`).join('');
+    const log = p.gameLog ? `<button class="openlog" data-rel="${esc(`${p.case}/play${p.play}/${p.gameLog}`)}">게임 로그 열기</button>` : '';
+    return `<section id="play-${i}" class="play-card v-${p.verdict}">
+      <div class="play-head"><span class="chip v-${p.verdict}">${label[p.verdict] || p.verdict}</span> <strong>${esc(p.case)} · ${p.play}판</strong><span class="spacer"></span>${log}</div>
+      <div class="play-reason">${esc(p.reason)} · 충돌 ${(p.events || []).filter((e) => e.type === 'crash').length}회</div>
+      <div class="combo">${comboHtml(p)}</div>
+      ${rewinds}
+      ${figs ? `<div class="gallery play-figs">${figs}</div>` : ''}
+    </section>`;
+  }).join('');
+  $$('#repPlays img').forEach((img) => img.addEventListener('click', () => window.open(img.src)));
+  $$('#repPlays .openlog').forEach((b) => b.addEventListener('click', () => qa.runsOpenFile(state.repName, b.dataset.rel)));
+}
+$('#repOpen').addEventListener('click', () => state.repName && qa.runsOpen(state.repName));
+
+// ---------- Claude 대화 ----------
+let botEl = null;
+let botText = '';
+$('#chatSend').addEventListener('click', async () => {
+  const text = $('#chatInput').value.trim();
+  if (!text) return;
+  $('#chatInput').value = '';
+  $('#chatStarters').hidden = true;
+  const me = document.createElement('div');
+  me.className = 'me';
+  me.textContent = text;
+  $('#chatLog').appendChild(me);
+  botEl = document.createElement('div');
+  botEl.className = 'bot md';
+  botEl.textContent = '…';
+  $('#chatLog').appendChild(botEl);
+  botText = '';
+  state.chatId += 1;
+  setChatBusy(true);
+  try { await qa.claudeChat(state.chatId, text, state.chatSession); } catch (e) { botEl.textContent = e.message; setChatBusy(false); }
+});
+// 진행 중에는 보내기 자리에 멈추기를 둔다
+function setChatBusy(busy) {
+  $('#chatSend').hidden = busy;
+  $('#chatStop').hidden = !busy;
+}
+$$('#chatStarters button').forEach((b) => b.addEventListener('click', () => { $('#chatInput').value = b.dataset.prompt; $('#chatInput').focus(); }));
+$('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) $('#chatSend').click(); });
+$('#chatStop').addEventListener('click', () => qa.claudeStop(state.chatId));
+$('#chatNew').addEventListener('click', () => {
+  state.chatSession = null;
+  $$('#chatLog > :not(#chatStarters)').forEach((el) => el.remove());
+  $('#chatStarters').hidden = false;
+});
+qa.on('claude:chunk', ({ chatId, text }) => {
+  if (chatId !== state.chatId || !botEl) return;
+  botText += text;
+  botEl.innerHTML = marked.parse(botText);
+  $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+});
+qa.on('claude:done', ({ chatId, ok, sessionId, cost, error }) => {
+  if (chatId !== state.chatId) return;
+  setChatBusy(false);
+  if (sessionId) state.chatSession = sessionId;
+  const foot = document.createElement('div');
+  foot.className = 'muted';
+  foot.textContent = ok ? (cost ? `$${cost.toFixed(3)}` : '') : `오류: ${error}`;
+  $('#chatLog').appendChild(foot);
+});
+
+// ---------- 시작 ----------
+(async () => {
+  // 필수 도구가 빠져 있으면 「준비」 탭부터 보여준다
+  runSetupCheck().then((r) => { if (r && r.fail) $('#tabs button[data-tab="setup"]').click(); });
+  await loadDevices();
+  const scenSt = await refreshScenario();
+  if (scenSt && !scenSt.ready) $('#tabs button[data-tab="setup"]').click();
+  // 받아 둔 저장소가 있으면 시작할 때 남이 바꾼 것을 받아 온다
+  if (scenSt && scenSt.ready && scenSt.upstream) await scenDo('받기', () => qa.scenarioPull(), { auto: true });
+  await loadPresets();
+  await loadSuites();
+  for (const r of await qa.runActive()) runPanelStart(r.platform);
+  syncRunPanels();
+})();
