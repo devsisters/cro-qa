@@ -80,7 +80,12 @@ def main():
         ok = code == 0
         add('키트 Chrome 로그인(stove)', 'OK' if ok else 'FAIL', out.strip()[-160:],
             '' if ok else 'node tools/web/chrome_cdp.mjs launch 로 띄운 창에서 stove·마카롱에 로그인한다(SETUP.md 6장)')
-    devices = qc.load_json(os.path.join(HERE, 'device_flows', 'devices.json'))
+    devices_path = os.path.join(HERE, 'device_flows', 'devices.json')
+    if not os.path.exists(devices_path):
+        add('devices.json', 'WARN', '없음', 'cp tools/device_flows/devices.example.json tools/device_flows/devices.json 후 기기 ID 를 넣는다')
+        devices = qc.load_json(os.path.join(HERE, 'device_flows', 'devices.example.json'))
+    else:
+        devices = qc.load_json(devices_path)
     for key in ('ios', 'aos'):
         d = devices.get(key, {}).get('device')
         add(f'devices.json {key}', 'OK' if d else 'WARN', d or '비어 있음',

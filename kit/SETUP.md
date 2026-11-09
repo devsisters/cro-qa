@@ -54,7 +54,7 @@ python3 tools/doctor.py --web    # 상태·시간 케이스를 돌릴 때 — �
 
 ## 7. QA 앱
 
-설치·업데이트는 저장소 맨 위 `README.md` 「처음 설치」를 따른다. 요약하면 `brew install node` → `gh repo clone devsisters/cro-qa` → Finder 에서 `kit/start.command` 두 번 누르기.
+설치·업데이트는 저장소 맨 위 `README.md` 「처음 설치」를 따른다. Claude 에게 맡길 때의 절차는 저장소 맨 위 `INSTALL.md` 다. 요약하면 `brew install node` → `gh repo clone devsisters/cro-qa` → Finder 에서 `kit/start.command` 두 번 누르기.
 
 - 앱을 처음 띄우면 「준비」 탭이 이 문서의 1~5장을 점검한다. 빠진 도구는 그 줄의 버튼으로 설치하거나 명령을 복사해 터미널에 붙인다. 기기의 게임 앱(DEBUG 빌드) 설치 여부도 본다
 - 앱이 저장소 안에서 돌기 때문에 저장소를 따로 고를 필요가 없다. 케이스·문서·녹화는 화면 위 줄의 「최신 받기」·「변경 공유」로 주고받는다(앱을 켤 때도 자동으로 받는다). 같은 부분을 둘이 고쳐 충돌이 나면 앱이 받기 전 상태로 되돌리고 알려 준다

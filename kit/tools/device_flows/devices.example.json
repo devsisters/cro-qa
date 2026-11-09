@@ -1,0 +1,15 @@
+{
+  "mac": {
+    "platform": "mac"
+  },
+  "ios": {
+    "platform": "ios",
+    "device": "",
+    "note": "xcrun devicectl list devices 의 Identifier(또는 UDID)"
+  },
+  "aos": {
+    "platform": "android",
+    "device": "",
+    "note": "adb devices 의 serial"
+  }
+}

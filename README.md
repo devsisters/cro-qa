@@ -14,6 +14,19 @@ QA 자동화의 케이스·문서·녹화와 **QA 앱**을 함께 담은 저장�
 
 ## 처음 설치 (컴퓨터마다 한 번)
 
+### Claude 에게 맡기기
+
+Claude Code 가 설치돼 있으면 터미널에서 `claude` 를 실행하고 아래를 붙여 넣는다. 비밀번호 입력·기기 화면 허용·게임 설치처럼 사람이 할 일이 나오면 Claude 가 멈추고 알려 준다.
+
+```
+devsisters/cro-qa 저장소의 INSTALL.md 를 읽고 그대로 QA 앱 처음 설치를 해줘.
+읽기: gh api repos/devsisters/cro-qa/contents/INSTALL.md -H "Accept: application/vnd.github.raw"
+gh 가 없으면 brew install gh 로 설치하고, 로그인이 안 돼 있으면 나에게 ! gh auth login 을 시켜줘.
+brew 도 없으면 내가 할 설치 방법을 알려줘.
+```
+
+### 직접 하기
+
 1. 기기 준비는 `kit/SETUP.md` 1·2장(iPad 는 Xcode, Android 는 adb)
 2. Node.js 설치: 터미널에서 `brew install node`
 3. 이 저장소 받기: 터미널에서

@@ -3,7 +3,11 @@ runs/
 *.tmp-*
 # QA 앱(kit/) — 각자 컴퓨터에만 두는 것
 kit/runs/
-kit/workspace/
+kit/workspace/*
+!kit/workspace/.gb-agent/
+kit/workspace/.gb-agent/*
+# iOS(devicectl)용 Xcode 경로 설정 — 비밀값 없음, 모두 같은 파일을 쓴다
+!kit/workspace/.gb-agent/env.sh
 kit/app/node_modules/
 kit/tools/device_flows/devices.json
 __pycache__/
