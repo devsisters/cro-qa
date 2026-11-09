@@ -941,13 +941,13 @@ function expectLines(exp) {
   return out;
 }
 const verdictCls = (v) => stClass(v === 'PASS' ? 'Pass' : v === 'FAIL' ? 'Fail' : 'Block');
-const VERDICT_KO = { PASS: '통과', FAIL: '실패', HUMAN: '사람 확인', REVIEW: '확인 필요', ERROR: '진행 실패', UNSURE: '확인 필요', NOT_RUN: '미실행' };
+const VERDICT_KO = { PASS: '통과', FAIL: '실패', HUMAN: '사람 확인', REVIEW: '확인 필요', ERROR: '진행 실패', UNSURE: '확인 필요', NOT_RUN: '미실행', DONE: '진행', FAILED: '진행 실패' };
 function scoringHtml(data, file) {
   const points = data.scoring || [];
   const last = data.lastRun || null;
   const base = `${og.scDir}/${file.replace(/\.json$/, '')}`;
   const lastLine = last ? `<p class="muted">마지막 실행 ${esc((last.at || '').slice(5, 16).replace('T', ' '))} · ${esc(last.platform || '')} · <span class="st ${verdictCls(last.verdict)}">${esc(VERDICT_KO[last.verdict] || last.verdict || '-')}</span>${last.reason ? ` · ${esc(last.reason)}` : ''}</p>` : '';
-  if (!points.length) return `${lastLine}<p class="muted">채점표가 아직 없다 — 시나리오를 만들며 「여기 캡처해」라고 하면 그 화면이 채점 지점으로 등록되고, Claude 가 조건 초안을 만든다.</p>`;
+  if (!points.length) return `${lastLine}${(last && (last.actions || []).length) ? `<div class="muted">마지막 실행 액션 ${(last.actions || []).length}개</div>` : ''}<p class="muted">채점표가 아직 없다 — 시나리오를 만들며 「여기 캡처해」라고 하면 그 화면이 채점 지점으로 등록되고, Claude 가 조건 초안을 만든다.</p>`;
   const rows = points.map((p) => {
     const lines = expectLines(p.expect);
     const confirmHtml = p.confirmed ? `<span class="sc-ok">확정</span> <span class="muted">${esc(p.confirmedBy || '')}</span>`
@@ -961,7 +961,9 @@ function scoringHtml(data, file) {
         ${p.human ? `<div class="sc-human">사람 확인: ${esc(p.humanNote || '캡처를 보고 판단')}</div>` : ''}${p.compareImage ? '<div class="muted">참고 그림과 화면 비교도 한다</div>' : ''}
         <div class="sc-refs">${refs}</div></td><td>${res}</td></tr>`;
   }).join('');
-  return `${lastLine}<div class="muted">채점표 — 조건으로 채점, 그림은 참고</div><table class="grid scoring"><thead><tr><th>지점</th><th>조건</th><th>마지막 결과</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const acts = (last && last.actions) || [];
+  const flowLine = acts.length ? `<div class="muted">마지막 실행 흐름 (액션 ${acts.length}개)</div><div class="flow small">${acts.map((x, n) => `<figure class="flow-item"><div class="flow-n">${n + 1}</div>${x.shot ? `<img loading="lazy" src="${fileUrl(`${state.kit}/${x.shot}`)}">` : '<div class="noshot">-</div>'}<figcaption>${esc(x.label || '')}<br><span class="chip v-${chipOf(x.verdict)}">${esc(VERDICT_KO[x.verdict] || (x.verdict === 'DONE' ? '진행' : x.verdict === 'FAILED' ? '진행 실패' : x.verdict))}</span></figcaption></figure>`).join('')}</div>` : '';
+  return `${lastLine}${flowLine}<div class="muted">채점표 — 조건으로 채점, 그림은 참고</div><table class="grid scoring"><thead><tr><th>지점</th><th>조건</th><th>마지막 결과</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function askClaudeScenario(tabName, tc, file) {
   const target = file || `${tabDirName(tabName)}/${tc.key}.json`;
@@ -1022,6 +1024,7 @@ $('#ogSheetFile').addEventListener('click', () => sheetLoad('file'));
 function refreshRunLabel() {
   const kind = $('#runKind').value;
   $('#runRelaunchWrap').style.display = kind === 'outgame' ? '' : 'none';
+  $('#runActionCapWrap').style.display = kind === 'outgame' ? '' : 'none';
   $('#runSuiteLabel').textContent = kind === 'rewind'
     ? `${(state.rwFile || '-').replace(/\.json$/, '')} · 케이스 ${((state.rwSuite || {}).cases || []).length}개`
     : `아웃게임 시나리오 ${state.ogSelected.size}개${state.ogSelected.size ? ` · ${[...state.ogSelected].slice(0, 3).map((f) => f.split('/')[0]).filter((v, i, a) => a.indexOf(v) === i).join(', ')}` : ' — 아웃게임 탭에서 체크한다'}`;
@@ -1112,6 +1115,7 @@ $('#runStart').addEventListener('click', async () => {
         suiteFile: kind === 'rewind' ? state.rwFile : null,
         scenarioFiles: kind === 'rewind' ? [] : [...state.ogSelected],
         relaunch: $('#runRelaunch').checked,
+        actionCapture: $('#runActionCap').checked,
       });
       logLine(platform, `▶ ${kind === 'rewind' ? `되감기 ${state.rwFile}` : `시나리오 ${state.ogSelected.size}개`} 시작`, 'muted');
     } catch (e) {
@@ -1164,6 +1168,13 @@ function runTitle(name) {
   if (!m) return { title: name, sub: '' };
   return { title: m[1] === 'scenario' ? '아웃게임 시나리오' : m[1], sub: `${{ ios: 'iOS', aos: 'Android', mac: 'macOS' }[m[2]]} · ${m[4]}/${m[5]} ${m[6]}:${m[7]}` };
 }
+const chipOf = (v) => ({ HUMAN: 'UNSURE', DONE: 'PASS', FAILED: 'ERROR' }[v] || v);
+// 액션 캡처와 채점 지점을 실행 순서대로
+function flowOf(c) {
+  const items = (c.actions || []).map((x) => Object.assign({ kind: 'action' }, x));
+  for (const cp of c.checkpoints || []) items.push({ kind: 'checkpoint', step: cp.step, label: cp.name, verdict: cp.verdict, shot: cp.shot });
+  return items.sort((a, b) => (a.step ?? 1e6) - (b.step ?? 1e6));
+}
 // 아웃게임 시나리오 실행 리포트 — 위에 TC 별 상태 표, 아래에 지점별 캡처가 든 상세. 표의 줄을 누르면 그 TC 상세로 간다
 function renderScenarioRun(run) {
   const cases = (run.results && run.results.cases) || [];
@@ -1193,18 +1204,29 @@ function renderScenarioRun(run) {
   $('#repBody').innerHTML = cases.length
     ? `<table class="grid summary-table"><thead><tr><th>탭</th><th>No</th><th>분류</th><th>기대 결과</th><th>판정</th><th>사유</th><th>캡처</th></tr></thead><tbody>${rows}</tbody></table>`
     : '<p class="muted">실행한 TC 가 없습니다</p>';
+  // 사람이 볼 것 — 실패한 지점, 사람 확인 지점, 진행이 멈춘 액션
+  const look = (run.results && run.results.attention) || [];
+  const lookHtml = `<div class="attention-box"><h3>사람이 볼 것 ${look.length ? look.length : ''}</h3>${look.length
+    ? `<table class="grid"><thead><tr><th>탭</th><th>No</th><th>지점·액션</th><th>판정</th><th>왜</th><th>캡처</th></tr></thead><tbody>${look.map((x) => {
+      const i = cases.findIndex((c) => c.id === x.case);
+      return `<tr data-i="${i}"><td>${esc(x.tab)}</td><td>${esc(x.no)}</td><td>${esc(x.what)}</td><td><span class="chip v-${chipOf(x.verdict)}">${esc(ko[x.verdict] || x.verdict)}</span></td><td>${esc(x.why)}</td><td>${x.shot ? `<img class="thumb" src="${fileUrl(abs(x.shot))}" loading="lazy">` : '-'}</td></tr>`;
+    }).join('')}</tbody></table>`
+    : '<p class="muted">없음 — 모든 지점이 조건을 통과했고 사람 확인 지점이 없다.</p>'}</div>`;
+  $('#repBody').innerHTML = lookHtml + $('#repBody').innerHTML;
   $('#repFull').open = true;
   $('#repPlays').innerHTML = cases.map((c, i) => {
     const sc = c.scenario || {};
     const labels = sc.labels || {};
     const err = c.error ? `<div class="play-reason">진행 실패: ${esc(c.error.kind)} at ${esc(c.error.step)} — ${esc(c.error.detail)}</div>${c.error.shot ? `<div class="gallery play-figs"><figure><img loading="lazy" src="${fileUrl(abs(c.error.shot))}"><figcaption>실패 시점</figcaption></figure></div>` : ''}` : '';
+    const flow = flowOf(c);
+    const strip = flow.length ? `<div class="flow">${flow.map((x, n) => `<figure class="flow-item ${x.kind}"><div class="flow-n">${n + 1}</div>${x.shot ? `<img loading="lazy" src="${fileUrl(abs(x.shot))}">` : '<div class="noshot">캡처 없음</div>'}<figcaption>${x.kind === 'checkpoint' ? '채점 ' : ''}${esc(x.label)}<br><span class="chip v-${chipOf(x.verdict)}">${esc(ko[x.verdict] || x.verdict)}</span></figcaption></figure>`).join('')}</div>` : '';
     const cps = (c.checkpoints || []).map((cp) => `<div class="sc-point"><div><strong>${esc(cp.name)}</strong> ${esc(labels[cp.name] || '')} · <span class="chip v-${cp.verdict === 'HUMAN' ? 'UNSURE' : cp.verdict}">${esc(ko[cp.verdict] || cp.verdict)}</span></div>
       ${(cp.checks || []).length ? `<ul class="sc-checks">${cp.checks.map((x) => `<li class="${x.ok ? 'ok' : 'bad'}">${x.ok ? '✓' : '✗'} ${esc(x.check)}${x.ok ? '' : ` <span class="muted">(${esc(x.detail)})</span>`}</li>`).join('')}</ul>` : ''}
       ${cp.human ? `<div class="sc-human">사람 확인: ${esc(cp.human)}</div>` : ''}
       ${cp.shot ? `<div class="gallery play-figs"><figure><img loading="lazy" src="${fileUrl(abs(cp.shot))}"><figcaption>${esc(cp.name)}</figcaption></figure></div>` : '<div class="muted">캡처 없음</div>'}</div>`).join('');
     return `<section id="play-${i}" class="play-card v-${c.verdict}">
       <div class="play-head"><span class="chip v-${c.verdict === 'HUMAN' ? 'UNSURE' : c.verdict}">${esc(ko[c.verdict] || c.verdict)}</span> <strong>${esc(sc.tab || '')} · No.${esc(sc.no || '')}</strong><span class="spacer"></span><button class="revealplay" data-rel="${esc(c.id)}">캡처 폴더</button></div>
-      <div class="play-reason">${esc(sc.path || '')}${sc.expected ? ` — ${esc(sc.expected)}` : ''}</div>${err}${cps}</section>`;
+      <div class="play-reason">${esc(sc.path || '')}${sc.expected ? ` — ${esc(sc.expected)}` : ''}</div>${err}${strip ? `<div class="muted">흐름 — 실행 순서대로(액션은 진행 여부, 채점은 조건 판정)</div>${strip}` : ''}${cps}</section>`;
   }).join('');
   $('#repAttention').hidden = true;
   $$('#repBody tr[data-i]').forEach((tr) => tr.addEventListener('click', () => focusPlay(tr.dataset.i)));

@@ -370,3 +370,17 @@ table.tc tr.tc-row.sel td { background: var(--focus); }
 .play-card .sc-checks li.ok { color: var(--muted); }
 .play-card .sc-human { color: var(--unsure); }
 .chip.v-HUMAN { color: var(--unsure); }
+
+/* 실행 흐름(액션 캡처 + 채점 지점) */
+.flow { display: flex; gap: 8px; overflow-x: auto; padding: 6px 0 10px; }
+.flow-item { margin: 0; flex: none; width: 150px; position: relative; }
+.flow.small .flow-item { width: 110px; }
+.flow-item img, .flow-item .noshot { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; cursor: zoom-in; display: block; }
+.flow-item .noshot { display: grid; place-items: center; color: var(--muted); font-size: 11px; cursor: default; }
+.flow-item.checkpoint img { border: 2px solid var(--accent); }
+.flow-item figcaption { font-size: 11px; line-height: 1.35; margin-top: 3px; word-break: break-all; }
+.flow-n { position: absolute; top: 3px; left: 3px; background: var(--panel); color: var(--text); font-size: 10px; border-radius: 8px; padding: 0 5px; border: 1px solid var(--line); }
+.attention-box { border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 12px; }
+.attention-box h3 { margin: 4px 0 8px; }
+.attention-box tr[data-i] { cursor: pointer; }
+.chip.v-DONE { color: var(--pass); } .chip.v-FAILED { color: var(--danger); }

@@ -255,7 +255,7 @@ function recordingsDir() {
   return path.join(root || KIT, 'recordings');
 }
 
-function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase, scenarioFiles }, onLine, onExit) {
+function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase, scenarioFiles, actionCapture }, onLine, onExit) {
   const settings = readSettings();
   let file;
   if (kind === 'rewind' && recordCase) {
@@ -286,6 +286,7 @@ function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase,
   if (caseIds && caseIds.length) args.push('--case', caseIds.join(','));
   if (kind === 'rewind') args.push('--recordings', recordingsDir());
   if (kind !== 'rewind' && relaunch) args.push('--relaunch');
+  if (kind !== 'rewind' && actionCapture === false) args.push('--no-action-capture');
   // 기기 탭에서 고른 게임 서버 프리셋 — 서버 선택 창이 뜨면 이것을 고른다(묶음에 적힌 프리셋보다 우선)
   if (settings.serverPreset) args.push('--preset', settings.serverPreset);
   const child = spawn(settings.python, args, { cwd: KIT, env: toolEnv() });

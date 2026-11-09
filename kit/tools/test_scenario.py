@@ -95,5 +95,55 @@ class ConditionScoringTest(unittest.TestCase):
         self.assertEqual(cp['verdict'], 'FAIL', '조건이 틀리면 사람 확인보다 실패가 먼저다')
 
 
+class ActionCaptureTest(unittest.TestCase):
+    def run_case(self, steps, tap_ok=True):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device_flows'))
+        import case_runner
+        import flowlib
+        from unittest import mock
+        calls = []
+
+        def bridge(*args):
+            calls.append(args)
+            if args[0] == 'scene':
+                return {'ok': True, 'result': {'top': 'SceneNavigator'}}
+            if args[0] == 'tree':
+                return {'ok': True, 'result': {'nodes': [{'inst': '_btnA', 'receiver': 'button', 'rect': [0, 0, 10, 10]}]}}
+            if args[0] == 'tap':
+                return {'ok': True, 'result': {}} if tap_ok else {'ok': False, 'error': 'node not found: _btnZ'}
+            if args[0] == 'screenshot':
+                open(args[1], 'wb').write(b'png')
+                return {'ok': True}
+            return {'ok': True, 'result': {}}
+        out = tempfile.mkdtemp()
+        dev = flowlib.Device('mac', '/tmp/checkout', out, runner=bridge)
+        r = case_runner.Runner(dev, {'suite': 's', 'cases': []}, 'mac', out)
+        r.capture_actions = True
+        with mock.patch('case_runner.time.sleep', lambda s: None), mock.patch('flowlib.time.sleep', lambda s: None):
+            return r.run_case({'id': 'k', 'auto': True, 'start': 'here', 'steps': steps})
+
+    def test_each_action_is_captured_in_order_with_checkpoints(self):
+        res = self.run_case([{'do': 'tap', 'target': '_btnA', 'label': 'A 누르기'}, {'do': 'sleep', 's': 0},
+                             {'do': 'checkpoint', 'name': 'p', 'image': False}, {'do': 'back'}])
+        self.assertEqual([(a['step'], a['label'], a['verdict']) for a in res['actions']], [(0, 'A 누르기', 'DONE'), (3, 'back', 'DONE')])
+        self.assertTrue(all(a['shot'] for a in res['actions']))
+        self.assertEqual(res['checkpoints'][0]['step'], 2)
+
+    def test_failed_action_is_marked_with_failure_shot(self):
+        res = self.run_case([{'do': 'tap', 'target': '_btnZ'}], tap_ok=False)
+        self.assertEqual(res['verdict'], 'ERROR')
+        self.assertEqual([(a['step'], a['verdict']) for a in res['actions']], [(0, 'FAILED')])
+        self.assertIn('NAME_MISSING', res['actions'][0]['detail'])
+
+    def test_report_lists_what_people_should_look_at(self):
+        cases = [{'id': 'k', 'scenario': {'tab': 'T', 'no': '1'}, 'actions': [{'step': 0, 'label': 'A', 'verdict': 'DONE'}],
+                  'checkpoints': [{'name': 'p1', 'step': 1, 'verdict': 'HUMAN', 'human': '연출 확인', 'checks': []},
+                                  {'name': 'p2', 'step': 2, 'verdict': 'FAIL', 'checks': [{'check': '보임: X', 'ok': False}]},
+                                  {'name': 'p3', 'step': 3, 'verdict': 'PASS', 'checks': []}]}]
+        look = scenario_run.attention(cases)
+        self.assertEqual([(x['what'], x['verdict'], x['why']) for x in look], [('p1', 'HUMAN', '연출 확인'), ('p2', 'FAIL', '보임: X')])
+        self.assertEqual([x['label'] for x in scenario_run.timeline(cases[0])], ['A', 'p1', 'p2', 'p3'])
+
+
 if __name__ == '__main__':
     unittest.main()

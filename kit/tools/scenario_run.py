@@ -93,7 +93,31 @@ def main():
 
 
 VERDICT_KO = {'PASS': '통과', 'FAIL': '실패', 'HUMAN': '사람 확인', 'REVIEW': '확인 필요', 'UNSURE': '확인 필요',
-              'ERROR': '진행 실패', 'NOT_RUN': '미실행'}
+              'ERROR': '진행 실패', 'NOT_RUN': '미실행', 'DONE': '진행', 'FAILED': '진행 실패'}
+
+
+def timeline(c):
+    """액션 캡처와 채점 지점을 실행 순서대로 — [{kind, step, label, verdict, shot, ...}]"""
+    items = [dict(x, kind='action') for x in c.get('actions', [])]
+    items += [{'kind': 'checkpoint', 'step': cp.get('step', 10 ** 6), 'label': cp['name'], 'verdict': cp.get('verdict'),
+               'shot': cp.get('shot'), 'checks': cp.get('checks', []), 'human': cp.get('human', '')} for cp in c.get('checkpoints', [])]
+    return sorted(items, key=lambda x: (x.get('step') if x.get('step') is not None else 10 ** 6))
+
+
+def attention(cases):
+    """사람이 볼 것 — 실패한 채점 지점, 사람 확인 지점, 진행이 멈춘 액션"""
+    out = []
+    for c in cases:
+        sc = c.get('scenario') or {}
+        for x in timeline(c):
+            if x['kind'] == 'checkpoint' and x['verdict'] in ('FAIL', 'HUMAN', 'REVIEW'):
+                why = '; '.join(k['check'] for k in x.get('checks', []) if not k['ok']) or x.get('human') or '정답 그림과 차이'
+                out.append({'case': c['id'], 'tab': sc.get('tab', ''), 'no': sc.get('no', ''), 'what': x['label'],
+                            'verdict': x['verdict'], 'why': why, 'shot': x.get('shot')})
+            elif x['kind'] == 'action' and x['verdict'] == 'FAILED':
+                out.append({'case': c['id'], 'tab': sc.get('tab', ''), 'no': sc.get('no', ''), 'what': x['label'],
+                            'verdict': 'FAILED', 'why': x.get('detail', ''), 'shot': x.get('shot')})
+    return out
 
 
 def write_report(files, platform, out):
@@ -136,6 +160,17 @@ def write_report(files, platform, out):
         cell = lambda v: str(v).replace('|', '\\|').replace('\n', ' ')
         L.append(f'| {cell(sc.get("tab", ""))} | {cell(sc.get("no", ""))} | {cell(sc.get("path", ""))} | {cell(sc.get("expected", ""))} '
                  f'| {VERDICT_KO.get(c["verdict"], c["verdict"])} | {cell(reason) or "-"} |')
+    look = attention(cases)
+    results['attention'] = look
+    qc.save_json(results_path, results)
+    L += ['', '## 사람이 볼 것', '']
+    if look:
+        L += ['| 탭 | No | 지점·액션 | 판정 | 왜 | 캡처 |', '|---|---|---|---|---|---|']
+        for x in look:
+            L.append(f'| {cell(x["tab"])} | {cell(x["no"])} | {cell(x["what"])} | {VERDICT_KO.get(x["verdict"], x["verdict"])} | {cell(x["why"])} | '
+                     + (f'![]({rel(x["shot"])})' if x.get('shot') else '-') + ' |')
+    else:
+        L.append('없음 — 모든 지점이 조건을 통과했고 사람 확인 지점이 없다.')
     L += ['', '## 상세', '']
     for c in cases:
         sc = c.get('scenario') or {}
@@ -146,16 +181,20 @@ def write_report(files, platform, out):
             L.append(f'- 진행 실패: {e.get("kind")} at {e.get("step")} — {e.get("detail")}')
             if e.get('shot'):
                 L.append(f'  ![실패]({rel(e["shot"])})')
-        for cp in c.get('checkpoints', []):
-            label = (sc.get('labels') or {}).get(cp['name'], '')
-            L.append(f'- **{cp["name"]}** {label} — {VERDICT_KO.get(cp.get("verdict"), cp.get("verdict"))}')
-            for x in cp.get('checks', []):
-                if not x['ok']:
-                    L.append(f'  - ✗ {x["check"]} ({x["detail"]})')
-            if cp.get('human'):
-                L.append(f'  - 사람 확인: {cp["human"]}')
-            if cp.get('shot'):
-                L.append(f'  ![{cp["name"]}]({rel(cp["shot"])})')
+        L.append('- 흐름(실행 순서):')
+        for n, x in enumerate(timeline(c), 1):
+            if x['kind'] == 'checkpoint':
+                label = (sc.get('labels') or {}).get(x['label'], '')
+                L.append(f'  {n}. 채점 **{x["label"]}** {label} — {VERDICT_KO.get(x["verdict"], x["verdict"])}')
+                for k in x.get('checks', []):
+                    if not k['ok']:
+                        L.append(f'     - ✗ {k["check"]} ({k["detail"]})')
+                if x.get('human'):
+                    L.append(f'     - 사람 확인: {x["human"]}')
+            else:
+                L.append(f'  {n}. 액션 {x["label"]} — {VERDICT_KO.get(x["verdict"], x["verdict"])}' + (f' ({x["detail"]})' if x.get('detail') else ''))
+            if x.get('shot'):
+                L.append(f'     ![{n}]({rel(x["shot"])})')
         L.append('')
     with open(os.path.join(out, 'report.md'), 'w', encoding='utf-8') as f:
         f.write('\n'.join(L) + '\n')
@@ -178,7 +217,11 @@ def record_last_run(files, platform, out):
             'checkpoints': {cp['name']: {'verdict': cp.get('verdict'), 'shot': os.path.relpath(cp['shot'], qc.KIT) if cp.get('shot') else None,
                                          'failed': [x['check'] + f' ({x["detail"]})' for x in cp.get('checks', []) if not x['ok']],
                                          'human': cp.get('human', '')}
-                            for cp in c.get('checkpoints', [])}}
+                            for cp in c.get('checkpoints', [])},
+            'actions': [{'step': x.get('step'), 'label': x.get('label'), 'verdict': x.get('verdict'), 'scene': x.get('scene'),
+                         'shot': os.path.relpath(x['shot'], qc.KIT) if x.get('shot') else None, 'detail': x.get('detail', '')}
+                        for x in c.get('actions', [])],
+            'error': (c.get('error') or {}).get('detail', '')}
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=1)
             f.write('\n')

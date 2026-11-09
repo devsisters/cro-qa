@@ -29,6 +29,9 @@ import qa_common as qc  # noqa: E402
 
 SIG_AREA = 0.0025     # 이미지 면적의 0.25% 이상인 차이 덩어리만 의미 있는 차이로 본다(반짝이 등 작은 연출 제외)
 MASK_PAD = 4         # 마스크 여백(게임 좌표). 실측: Android 디버그 문구 경계가 0 이면 남고 4 면 사라졌다
+# 화면을 바꾸는 단계 — 「액션마다 캡처」가 켜져 있으면 이 단계가 끝날 때마다 화면을 찍어 흐름(actions)으로 남긴다
+ACTION_STEPS = {'tap', 'tap_select', 'tap_xy', 'swipe', 'back', 'close_popup', 'route', 'scroll_find', 'state', 'server_time'}
+ACTION_SETTLE = 0.5   # 누른 뒤 화면이 바뀌는 동안 잠깐 기다렸다 찍는다
 SIG_CHANGED = 0.03    # 마스크 뒤 바뀐 픽셀이 3% 를 넘으면 덩어리 크기와 상관없이 REVIEW
 
 STEP_KEYS = {
@@ -150,7 +153,7 @@ class Runner:
     def run_case(self, case, relaunch_first=False):
         from flowlib import FlowFailure
         import routes
-        res = {'id': case['id'], 'title': case.get('title', ''), 'verdict': None, 'checkpoints': [], 'error': None,
+        res = {'id': case['id'], 'title': case.get('title', ''), 'verdict': None, 'checkpoints': [], 'actions': [], 'error': None,
                'reason': '', 'started': time.strftime('%H:%M:%S')}
         if case.get('auto') is not True:
             res['verdict'] = 'NOT_RUN'
@@ -181,10 +184,22 @@ class Runner:
                 except FlowFailure:
                     routes.to_lobby(self.dev, self.suite.get('preset'), timeout=120)
             for i, step in enumerate(case.get('steps', [])):
+                current = i
                 self.step(case, i, step, res)
+                if step.get('do') == 'checkpoint' and res['checkpoints']:
+                    res['checkpoints'][-1]['step'] = i
+                elif step.get('do') in ACTION_STEPS and getattr(self, 'capture_actions', False) \
+                        and not any(x.get('step') == i for x in res.get('skipped', [])):   # when 으로 건너뛴 단계는 찍지 않는다
+                    self.capture_action(i, step, res, 'DONE')
         except FlowFailure as e:
             res['error'] = {'kind': e.kind, 'step': e.step, 'detail': e.detail, 'shot': self.dev.shot('failure'),
                             'shotError': getattr(self.dev, 'shot_error', None)}
+            steps = case.get('steps', [])
+            if getattr(self, 'capture_actions', False) and 'current' in locals() and current < len(steps):
+                # 멈춘 액션 — 실패 시점 캡처를 그 액션의 캡처로 쓴다
+                res['actions'].append({'step': current, 'do': steps[current].get('do'), 'label': self.action_label(steps[current]),
+                                       'verdict': 'FAILED', 'scene': None, 'shot': res['error']['shot'],
+                                       'detail': f'{e.kind}: {e.detail}'})
         except Exception as e:  # noqa: BLE001 — 케이스 하나의 예외로 묶음 전체를 멈추지 않는다
             res['error'] = {'kind': 'RUNNER', 'step': '', 'detail': f'{type(e).__name__}: {e}', 'shot': None}
         finally:
@@ -196,6 +211,24 @@ class Runner:
             res['verdict'] = 'UNSURE'
             res['reason'] = f'일부만 자동 확인: {case["partial"]}'
         return res
+
+    @staticmethod
+    def action_label(s):
+        if s.get('label'):
+            return s['label']
+        do = s.get('do')
+        what = s.get('target') or s.get('name') or s.get('owner') or ''
+        if not what and s.get('select') is not None:
+            what = qc.describe(s['select'])
+        if not what and do == 'tap_xy':
+            what = f'{s.get("x")},{s.get("y")}'
+        return f'{do} {what}'.strip()
+
+    def capture_action(self, i, s, res, verdict):
+        time.sleep(ACTION_SETTLE)
+        shot = self.dev.shot(f'step{i:02d}-{s.get("do")}')
+        res['actions'].append({'step': i, 'do': s.get('do'), 'label': self.action_label(s), 'verdict': verdict,
+                               'scene': self.dev.scene(), 'shot': shot})
 
     def step(self, case, i, s, res):
         from flowlib import FlowFailure
@@ -440,6 +473,7 @@ def main():
     ap.add_argument('--allow-time', action='store_true', help='server_time 단계(서버 시간 변경)가 있는 케이스도 돌린다')
     ap.add_argument('--out')
     ap.add_argument('--check', action='store_true', help='케이스 파일 형식만 검사')
+    ap.add_argument('--no-action-capture', action='store_true', help='액션(누르기·드래그 등)마다 화면을 찍지 않는다')
     a = ap.parse_args()
     suite = qc.load_json(a.suite_file)
     errs = validate(suite)
@@ -464,6 +498,7 @@ def main():
     out = a.out or os.path.join(qc.RUNS, f'{name}-{a.platform}-{stamp}')
     dev = Device(a.platform, qc.WORKSPACE, out, a.device)
     runner = Runner(dev, suite, a.platform, out, a.allow_spend)
+    runner.capture_actions = not a.no_action_capture
     runner.allow_time = a.allow_time and bool(suite.get('time_ok'))
     results = {'suite': name, 'sheet': suite.get('sheet', ''), 'platform': a.platform, 'device': a.device or '',
                'started': stamp, 'suiteFile': os.path.abspath(a.suite_file), 'cases': []}
