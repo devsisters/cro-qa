@@ -162,26 +162,30 @@
     </section>
 
     <!-- 아웃게임 -->
-    <section id="tab-outgame" class="tab">
+    <section id="tab-outgame" class="tab outgame">
       <div class="card sheet-import">
-        <h2>테스트 시트로 묶음 만들기</h2>
         <div class="sheet-row">
-          <label class="grow">시트 링크<input id="ogSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=… (테스트할 탭을 연 상태의 주소)"></label>
-          <label>묶음 이름<input id="ogSheetSuite" placeholder="v127-basic"></label>
-          <button id="ogSheetImport" class="primary">시트로 만들기</button>
-          <button id="ogSheetCsv" title="브라우저로 받은 CSV 파일을 직접 고른다">CSV 파일로</button>
+          <label class="grow">테스트 시트 링크<input id="ogSheetUrl" placeholder="https://docs.google.com/spreadsheets/d/… (QA 테스트 케이스 시트)"></label>
+          <button id="ogSheetLoad" class="primary">불러오기</button>
+          <button id="ogSheetFile" title="브라우저로 받은 xlsx 파일을 직접 고른다">xlsx 파일로</button>
+          <button id="ogSheetOpen" hidden>시트 열기</button>
         </div>
-        <p id="ogSheetStatus" class="muted">링크에 있는 탭(gid)을 읽는다. 회사 계정 전용 시트면 평소 브라우저가 CSV 를 내려받고, 앱이 다운로드 폴더에서 그 파일을 가져온다.</p>
+        <p id="ogSheetStatus" class="muted">시트 전체를 xlsx 로 받아 탭별 TC 를 읽는다. 회사 계정 전용 시트면 평소 브라우저가 내려받고, 앱이 다운로드 폴더에서 읽은 뒤 그 파일을 지운다(이미지가 있으면 수백 MB · 1분 안팎).</p>
       </div>
       <div class="toolbar">
-        <label>묶음 <select id="ogSuite"></select></label>
-        <button id="ogSheetOpen" hidden>시트 열기</button>
-        <label><input id="ogOnlyAuto" type="checkbox" checked> 자동화 가능한 것만</label>
-        <button id="ogAll">모두 선택</button><button id="ogNone">모두 해제</button>
+        <label>탭 <select id="ogTab"></select></label>
+        <label><input id="ogOnlyAuto" type="checkbox"> 시나리오 있는 것만</label>
+        <input id="ogSearch" class="og-search" placeholder="검색 — No · 분류 · 기대 결과">
+        <span class="spacer"></span>
         <span id="ogStatus" class="muted"></span>
       </div>
-      <table class="grid" id="ogTable"><thead><tr><th></th><th>id</th><th>제목</th><th>구분</th><th>단계</th></tr></thead><tbody></tbody></table>
-      <p id="ogEmpty" class="muted" hidden></p>
+      <div class="og-split">
+        <div class="og-list">
+          <table class="grid tc" id="ogTable"><thead><tr><th>No</th><th>중요도</th><th>분류</th><th>기대 결과</th><th>AOS</th><th>iOS</th><th>시나리오</th></tr></thead><tbody></tbody></table>
+          <p id="ogEmpty" class="muted" hidden></p>
+        </div>
+        <aside id="ogDetail" class="og-detail" hidden></aside>
+      </div>
     </section>
 
     <!-- 실행 -->

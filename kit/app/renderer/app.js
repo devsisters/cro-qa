@@ -98,6 +98,7 @@ function activateTab(name) {
   if (name === 'reports') loadRuns();
   if (name === 'run') refreshRunLabel();
   if (name === 'setup') renderUpdates();
+  if (name === 'outgame') loadOutgame();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
 
@@ -443,17 +444,14 @@ async function loadSuites() {
     if (keep && list.some((x) => x.file === keep)) sel.value = keep;
   };
   fill($('#rwSuite'), 'rewind', state.rwFile);
-  fill($('#ogSuite'), 'outgame', state.ogFile);
   showSuiteAuthors(list);
   if ($('#rwSuite').value) await openRewindSuite($('#rwSuite').value);
-  if ($('#ogSuite').value) await openOutgameSuite($('#ogSuite').value);
-  else { state.ogFile = null; state.ogSuite = null; renderOutgame(); }
 }
 // 묶음을 만든 사람(GitHub 아이디) — git 기록을 읽어 늦게 채운다. 아직 올리지 않은 묶음은 「공유 전」
 let suiteAuthorCache = {};
 async function showSuiteAuthors(list) {
   const paint = () => {
-    for (const sel of [$('#rwSuite'), $('#ogSuite')]) {
+    for (const sel of [$('#rwSuite')]) {
       for (const o of sel.options) {
         const x = list.find((y) => y.file === o.value);
         if (!x) continue;
@@ -466,7 +464,6 @@ async function showSuiteAuthors(list) {
   try { suiteAuthorCache = Object.assign({}, suiteAuthorCache, await qa.casesAuthors()); paint(); } catch (_) { /* 이름 없이 둔다 */ }
 }
 $('#rwSuite').addEventListener('change', () => openRewindSuite($('#rwSuite').value));
-$('#ogSuite').addEventListener('change', () => openOutgameSuite($('#ogSuite').value));
 
 async function openRewindSuite(file) {
   state.rwFile = file;
@@ -807,76 +804,149 @@ $('#rwNlGo').addEventListener('click', async () => {
   $('#rwNlGo').disabled = false;
 });
 
-// ---------- 아웃게임 ----------
-async function openOutgameSuite(file) {
-  state.ogFile = file;
-  state.ogSuite = await qa.casesRead(file);
-  state.ogSelected = new Set((state.ogSuite.cases || []).filter((c) => c.auto !== false && (c.steps || []).length).map((c) => c.id));
+// ---------- 아웃게임 — 테스트 시트 TC · 시나리오 ----------
+// 탭을 고르면 그 탭의 TC 가 나온다. 시나리오 파일(scenarios/<탭>/<TC 키>.json)이 있으면 ✓, 없으면 「만들기」.
+// 시나리오는 Claude 탭에서 담당자와 함께 만들고 고친다(사람의 교정·유의사항은 파일의 notes 에 남는다)
+const og = { sheet: null, scenarios: [], tab: '', selKey: '' };
+const tabDirName = (tab) => String(tab).replace(/[/\\:]/g, '_');
+const tcPath = (tc) => [tc.main, tc.sub1, tc.sub2, tc.sub3].filter(Boolean).map((v) => v.replace(/\s*\n\s*/g, ' ')).join(' › ');
+const stClass = (v) => (v === 'N/T' ? 'st-NT' : `st-${String(v).replace(/[^\w]/g, '')}`);
+function scenarioOf(tab, tc) {
+  const byKey = og.scenarios.find((x) => x.tab === tab && x.key === tc.key);
+  if (byKey) return { s: byKey, changed: false };
+  // 시트 문구가 바뀌었으면 키가 달라진다 — 같은 탭·같은 번호의 시나리오를 「문구 바뀜」으로 보여 준다
+  const byNo = og.scenarios.find((x) => x.tab === tab && String(x.no) === String(tc.no) && !(og.sheetKeys || new Set()).has(`${tab}\u001f${x.key}`));
+  return byNo ? { s: byNo, changed: true } : null;
+}
+async function loadOutgame() {
+  const r = await qa.sheetCurrent().catch(() => ({}));
+  og.sheet = r.cache || null;
+  og.scenarios = await qa.scenariosList().catch(() => []);
+  og.sheetKeys = new Set();
+  for (const t of (og.sheet && og.sheet.tabs) || []) for (const tc of t.tcs) og.sheetKeys.add(`${t.name}\u001f${tc.key}`);
+  const cur = r.current;
+  if (cur && cur.url && !$('#ogSheetUrl').value) $('#ogSheetUrl').value = cur.url;
+  $('#ogSheetOpen').hidden = !(cur && cur.url);
+  $('#ogSheetOpen').dataset.url = (cur && cur.url) || '';
+  if (og.sheet) {
+    const at = og.sheet.loadedAt ? new Date(og.sheet.loadedAt) : null;
+    const when = at ? `${at.getMonth() + 1}/${at.getDate()} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : '';
+    const total = og.sheet.tabs.reduce((n, t) => n + t.tcs.length, 0);
+    toast($('#ogSheetStatus'), `「${og.sheet.title || '시트'}」 · 탭 ${og.sheet.tabs.length}개 · TC ${total}개 · 시나리오 ${og.scenarios.length}개${when ? ` · ${when} 에 읽음` : ''}${cur && cur.setBy ? ` · 링크 ${cur.setBy}` : ''}`);
+  }
+  const tabs = (og.sheet && og.sheet.tabs) || [];
+  const keep = og.tab || lsGet('qa.ogTab');
+  $('#ogTab').innerHTML = tabs.map((t) => {
+    const n = t.tcs.filter((tc) => scenarioOf(t.name, tc)).length;
+    return `<option value="${esc(t.name)}">${esc(t.name)} (${t.tcs.length}${n ? ` · 시나리오 ${n}` : ''})</option>`;
+  }).join('');
+  if (tabs.some((t) => t.name === keep)) $('#ogTab').value = keep;
+  og.tab = $('#ogTab').value;
   renderOutgame();
-  refreshRunLabel();
 }
 function renderOutgame() {
+  const tab = ((og.sheet && og.sheet.tabs) || []).find((t) => t.name === og.tab);
   const onlyAuto = $('#ogOnlyAuto').checked;
-  const all = (state.ogSuite && state.ogSuite.cases) || [];
-  const cases = all.filter((c) => !onlyAuto || (c.auto !== false && (c.steps || []).length));
-  const sheet = state.ogSuite && typeof state.ogSuite.sheet === 'string' && state.ogSuite.sheet.startsWith('https://docs.google.com/') ? state.ogSuite.sheet : '';
-  $('#ogSheetOpen').hidden = !sheet;
-  $('#ogSheetOpen').dataset.url = sheet;
-  $('#ogEmpty').hidden = cases.length > 0;
-  $('#ogEmpty').textContent = !state.ogSuite ? '아웃게임 묶음이 없습니다 — 위에서 테스트 시트 링크로 만든다.'
-    : all.length ? `케이스 ${all.length}개 중 실행 단계가 있는 것이 없습니다 — 「자동화 가능한 것만」을 끄면 전부 보인다. 단계는 Claude 탭에서 채운다.` : '케이스가 없습니다.';
-  $('#ogTable tbody').innerHTML = cases.map((c) => `<tr>
-    <td><input type="checkbox" data-id="${esc(c.id)}" ${state.ogSelected.has(c.id) ? 'checked' : ''}></td>
-    <td>${esc(c.id)}</td><td>${esc(c.title)}</td><td>${esc((c.plan || {}).class || '')}</td><td>${(c.steps || []).length ? (c.steps || []).length : '<span class="muted">실행 단계 없음</span>'}</td></tr>`).join('');
-  $$('#ogTable input[data-id]').forEach((cb) => cb.addEventListener('change', () => {
-    if (cb.checked) state.ogSelected.add(cb.dataset.id); else state.ogSelected.delete(cb.dataset.id);
-    $('#ogStatus').textContent = `${state.ogSelected.size}개 선택`;
+  const q = $('#ogSearch').value.trim().toLowerCase();
+  const rows = [];
+  let shown = 0;
+  let withSc = 0;
+  let lastSection = null;
+  for (const tc of (tab && tab.tcs) || []) {
+    const sc = scenarioOf(tab.name, tc);
+    if (sc) withSc += 1;
+    if (onlyAuto && !sc) continue;
+    if (q && !`${tc.no} ${tcPath(tc)} ${tc.expected} ${tc.section}`.toLowerCase().includes(q)) continue;
+    if (tc.section !== lastSection) {
+      lastSection = tc.section;
+      if (tc.section) rows.push(`<tr class="sec"><td colspan="7">${esc(tc.section)}</td></tr>`);
+    }
+    shown += 1;
+    const mark = !sc ? `<button class="og-make" data-key="${esc(tc.key)}">만들기</button>`
+      : sc.changed ? `<span class="sc-warn" title="시트 문구가 시나리오를 만들 때와 다르다 — 확인 후 고친다">✓ 문구 바뀜</span>`
+        : `<span class="sc-ok" title="단계 ${sc.s.steps}개${sc.s.notes ? ` · 메모 ${sc.s.notes}개` : ''}">✓</span>`;
+    rows.push(`<tr class="tc-row${og.selKey === tc.key ? ' sel' : ''}" data-key="${esc(tc.key)}">
+      <td class="no">${esc(tc.no)}</td><td class="st">${esc(tc.priority)}</td><td class="path">${esc(tcPath(tc))}</td>
+      <td class="exp">${tc.expected ? esc(tc.expected) : '<span class="muted">(기대 결과 없음)</span>'}</td>
+      <td class="st ${stClass(tc.aos)}">${esc(tc.aos)}</td><td class="st ${stClass(tc.ios)}">${esc(tc.ios)}</td><td class="st">${mark}</td></tr>`);
+  }
+  $('#ogTable tbody').innerHTML = rows.join('');
+  $('#ogEmpty').hidden = shown > 0;
+  $('#ogEmpty').textContent = !og.sheet ? '테스트 시트를 아직 읽지 않았습니다 — 위에 시트 링크를 넣고 「불러오기」를 누른다.'
+    : !tab ? '탭을 고른다.'
+      : onlyAuto && !withSc ? '이 탭에는 아직 시나리오가 없습니다 — 「시나리오 있는 것만」을 끄고 TC 의 「만들기」를 누른다.' : '맞는 TC 가 없습니다.';
+  $('#ogStatus').textContent = tab ? `TC ${tab.tcs.length}개 · 시나리오 ${withSc}개${shown !== tab.tcs.length ? ` · ${shown}개 보임` : ''}` : '';
+  $$('#ogTable tr.tc-row').forEach((tr) => tr.addEventListener('click', (e) => {
+    og.selKey = tr.dataset.key;
+    $$('#ogTable tr.tc-row').forEach((x) => x.classList.toggle('sel', x === tr));
+    showTcDetail(e.target.closest('.og-make') ? 'make' : '');
   }));
-  $('#ogStatus').textContent = `${state.ogSelected.size}개 선택`;
+  if (og.selKey) showTcDetail('');
 }
+async function showTcDetail(action) {
+  const tab = ((og.sheet && og.sheet.tabs) || []).find((t) => t.name === og.tab);
+  const tc = tab && tab.tcs.find((x) => x.key === og.selKey);
+  const box = $('#ogDetail');
+  if (!tc) { box.hidden = true; $('.og-split').classList.remove('with-detail'); return; }
+  const sc = scenarioOf(tab.name, tc);
+  const data = sc ? await qa.scenariosRead(sc.s.file).catch(() => null) : null;
+  const notes = (data && data.notes) || [];
+  box.innerHTML = `<h3>${esc(tab.name)} · No.${esc(tc.no)}</h3>
+    <div class="muted">${esc(tc.section || '')}</div>
+    <div class="exp">${esc(tc.expected || '(기대 결과 없음)')}</div>
+    <dl><dt>분류</dt><dd>${esc(tcPath(tc))}</dd><dt>중요도</dt><dd>${esc(tc.priority)}</dd>
+      <dt>결과</dt><dd>AOS ${esc(tc.aos || '-')} · iOS ${esc(tc.ios || '-')}</dd>
+      ${tc.jira ? `<dt>JIRA</dt><dd>${esc(tc.jira)}</dd>` : ''}${tc.comment ? `<dt>Comment</dt><dd>${esc(tc.comment)}</dd>` : ''}
+      <dt>시트 줄</dt><dd>${tc.row}</dd><dt>TC 키</dt><dd><code>${esc(tc.key)}</code></dd></dl>
+    <h3>시나리오</h3>
+    ${data ? `<p>${sc.changed ? '<span class="sc-warn">시트 문구가 바뀌었다 — 시나리오가 아직 옛 문구 기준이다</span><br>' : ''}단계 ${((data.case || {}).steps || []).length}개 · ${esc(data.createdBy || '')} ${esc((data.updatedAt || '').slice(0, 16).replace('T', ' '))}<br><code>scenarios/${esc(sc.s.file)}</code></p>
+      ${notes.length ? `<div class="muted">교정·유의사항</div><ul class="notes">${notes.map((n) => `<li>${esc(typeof n === 'string' ? n : `${n.text || ''}${n.by ? ` — ${n.by}` : ''}`)}</li>`).join('')}</ul>` : ''}
+      <button id="ogClaude" class="primary">Claude 와 고치기</button>`
+      : '<p class="muted">시나리오 파일이 아직 없다. Claude 가 기기에서 화면을 확인하며 단계를 추측해 만들고 한 번 돌려 본다. 그다음 교정·유의사항을 말하면 시나리오를 고친다.</p><button id="ogClaude" class="primary">Claude 와 만들기</button>'}
+    <button id="ogDetailClose">닫기</button>`;
+  box.hidden = false;
+  $('.og-split').classList.add('with-detail');
+  $('#ogDetailClose').onclick = () => { og.selKey = ''; box.hidden = true; $('.og-split').classList.remove('with-detail'); $$('#ogTable tr.tc-row.sel').forEach((x) => x.classList.remove('sel')); };
+  $('#ogClaude').onclick = () => askClaudeScenario(tab.name, tc, sc && sc.s.file);
+  if (action === 'make') askClaudeScenario(tab.name, tc, null);
+}
+function askClaudeScenario(tabName, tc, file) {
+  const target = file || `${tabDirName(tabName)}/${tc.key}.json`;
+  const head = `테스트 시트 「${(og.sheet && og.sheet.title) || ''}」의 「${tabName}」 탭 TC No.${tc.no}`;
+  const info = [`- 구간: ${tc.section || '-'}`, `- 분류: ${tcPath(tc) || '-'}`, `- 중요도: ${tc.priority || '-'}`, `- 기대 결과: ${tc.expected || '(없음)'}`,
+    tc.comment ? `- 시트 Comment: ${tc.comment}` : '', `- TC 키: ${tc.key} · 시트 ${tc.row}번째 줄`, `- 시나리오 파일: scenarios/${target} (형식은 scenarios/README.md)`].filter(Boolean).join('\n');
+  const prompt = file
+    ? `${head} 시나리오를 이어서 고치자.\n${info}\n\n파일을 먼저 읽고 지금 단계와 notes 를 확인해줘. 내가 말하는 교정·유의사항은 notes 에 남기고 시나리오에 반영한 뒤 한 플랫폼에서 다시 돌려 결과를 알려줘.\n\n`
+    : `${head} 시나리오를 만들어줘.\n${info}\n\n기기에서 직접 화면을 확인하면서 단계를 추측해 시나리오 파일을 만들고, 한 플랫폼에서 한 번 돌려 결과와 확신이 없는 부분을 알려줘. 내가 교정하거나 유의사항을 말하면 notes 에 남기고 시나리오를 고친다.`;
+  activateTab('chat');
+  if (!file || !state.chatSession) $('#chatNew').click();
+  $('#chatInput').value = prompt;
+  $('#chatInput').focus();
+}
+$('#ogTab').addEventListener('change', () => { og.tab = $('#ogTab').value; lsSet('qa.ogTab', og.tab); og.selKey = ''; $('#ogDetail').hidden = true; $('.og-split').classList.remove('with-detail'); renderOutgame(); });
 $('#ogOnlyAuto').addEventListener('change', renderOutgame);
+$('#ogSearch').addEventListener('input', renderOutgame);
 $('#ogSheetOpen').addEventListener('click', () => qa.externalOpen($('#ogSheetOpen').dataset.url));
-
-// 테스트 시트 → 아웃게임 묶음
-async function sheetImport(how) {
+async function sheetLoad(how) {
   const url = $('#ogSheetUrl').value.trim();
-  const suite = $('#ogSheetSuite').value.trim();
   const status = $('#ogSheetStatus');
   if (how !== 'file' && !url) { toast(status, '시트 링크를 넣는다', true); return; }
-  if (!suite) { toast(status, '묶음 이름을 넣는다(영문 소문자·숫자·-·_, 예: v127-basic)', true); return; }
-  const buttons = [$('#ogSheetImport'), $('#ogSheetCsv')];
+  const buttons = [$('#ogSheetLoad'), $('#ogSheetFile')];
   buttons.forEach((b) => { b.disabled = true; });
   try {
-    let r;
-    if (how === 'file') {
-      r = await qa.sheetImportFile(url, suite);
-      if (r === null) { toast(status, ''); return; }
-    } else {
-      toast(status, '시트를 받는 중…');
-      r = await qa.sheetImport(url, suite);
-      if (!r.ok && r.code === 5) {
-        toast(status, '회사 계정 전용 시트다 — 브라우저가 CSV 를 내려받는 중… 브라우저가 로그인을 물으면 회사 계정으로 로그인한다(최대 3분 기다린다)');
-        r = await qa.sheetViaBrowser(url, suite);
-      }
-    }
-    if (!r.ok) { toast(status, r.error || '가져오지 못했다', true); return; }
-    const cols = Object.entries(r.columns || {}).map(([k, v]) => `${v || "(제목 없는 열)"}→${k}`).join(' · ');
-    toast(status, `「${suite}」 묶음을 만들었다 · 케이스 ${r.cases}개${cols ? ` · 읽은 열: ${cols}` : ''} — 「변경 공유」로 올리면 팀이 같이 본다`);
-    $('#ogSheetSuite').value = '';
-    state.ogFile = r.file;
-    await loadSuites();
-    $('#ogOnlyAuto').checked = false;
-    renderOutgame();
+    if (how !== 'file') toast(status, '시트를 받는 중… 회사 계정 전용 시트면 브라우저가 xlsx 를 내려받는다(로그인을 물으면 회사 계정으로). 시트가 크면 1분 넘게 걸린다');
+    const r = how === 'file' ? await qa.sheetLoadFile(url) : await qa.sheetLoad(url);
+    if (r === null) { toast(status, ''); return; }
+    await loadOutgame();
+    if (r.skipped && r.skipped.length) toast(status, `${$('#ogSheetStatus').textContent} · TC 가 아닌 탭 ${r.skipped.join(', ')} 은 뺐다`);
   } catch (e) {
     toast(status, e.message, true);
   } finally {
     buttons.forEach((b) => { b.disabled = false; });
   }
 }
-$('#ogSheetImport').addEventListener('click', () => sheetImport('link'));
-$('#ogSheetCsv').addEventListener('click', () => sheetImport('file'));
-$('#ogAll').addEventListener('click', () => { $$('#ogTable input[data-id]').forEach((cb) => state.ogSelected.add(cb.dataset.id)); renderOutgame(); });
-$('#ogNone').addEventListener('click', () => { state.ogSelected.clear(); renderOutgame(); });
+$('#ogSheetLoad').addEventListener('click', () => sheetLoad('link'));
+$('#ogSheetFile').addEventListener('click', () => sheetLoad('file'));
 
 // ---------- 실행 ----------
 function refreshRunLabel() {

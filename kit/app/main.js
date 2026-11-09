@@ -111,79 +111,131 @@ handle('presets:server', async () => {
   const data = await r.json();
   return (data.presets || []).map((p) => p.name).filter((n) => typeof n === 'string' && n);
 });
-// ---------- 테스트 시트 → 아웃게임 묶음 ----------
-// 링크 공개 시트는 바로 받고, 회사 계정 전용이면 평소 브라우저(이미 로그인됨)로 CSV 를 내려받게 한 뒤
-// 다운로드 폴더에 새로 생긴 CSV 를 가져온다. 앱은 로그인 정보를 다루지 않는다
-const SUITE_NAME = /^[a-z0-9][a-z0-9_-]*$/;
-function sheetExportUrl(url) {
+// ---------- 테스트 시트(TC) · 시나리오 ----------
+// 시트 전체를 xlsx 로 받아 탭별 TC 를 읽는다. 링크 공개 시트는 바로 받고, 회사 계정 전용이면 평소 브라우저(이미 로그인됨)로
+// 내려받게 한 뒤 다운로드 폴더에 새로 생긴 xlsx 를 읽는다. 앱은 로그인 정보를 다루지 않는다
+const SHEET_CACHE = path.join(kit.P.kit, 'workspace', 'sheet-cache');
+function sheetIdOf(url) {
   const m = /\/spreadsheets\/d\/([\w-]+)/.exec(String(url || ''));
   if (!m) throw new Error('구글 스프레드시트 링크가 아니다(docs.google.com/spreadsheets/d/… 주소를 넣는다)');
-  const gid = /[#&?]gid=(\d+)/.exec(url);
-  return `https://docs.google.com/spreadsheets/d/${m[1]}/export?format=csv${gid ? `&gid=${gid[1]}` : ''}`;
+  return m[1];
 }
-function runSheetImport(source, suite, sheetUrl) {
-  if (!SUITE_NAME.test(suite)) throw new Error('묶음 이름은 영문 소문자·숫자·-·_ 로 쓴다(예: v127-basic)');
-  const out = kit.caseFile(`${suite}.json`);
-  if (fs.existsSync(out)) throw new Error(`「${suite}」 묶음이 이미 있다 — 다른 이름을 쓴다`);
+const repoPath = (...p) => path.join(kit.scenarioRoot() || kit.P.kit, ...p);
+function readJsonFile(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return fallback; } }
+function parseXlsx(file, id) {
+  fs.mkdirSync(SHEET_CACHE, { recursive: true });
+  const out = path.join(SHEET_CACHE, `${id}.json`);
   const { execFile } = require('child_process');
-  const args = [path.join(kit.P.kit, 'tools', 'sheet_import.py'), source, '--suite', suite, '--out', out];
-  if (sheetUrl) args.push('--sheet-url', sheetUrl);
-  return new Promise((resolve) => {
-    execFile(kit.readSettings().python, args, { cwd: kit.P.kit, env: kit.toolEnv(), timeout: 90000 }, async (err, stdout, stderr) => {
-      let r;
-      // 결과 JSON 은 여러 줄로 나온다 — 첫 「{」부터 끝까지 읽는다
-      const text = String(stdout || '');
-      try { r = text.includes('{') ? JSON.parse(text.slice(text.indexOf('{'))) : null; } catch (_) { r = null; }
-      if (!r) r = { ok: false, error: String(stderr || (err && err.message) || '응답 없음').trim().slice(-300) };
-      r.code = err ? (typeof err.code === 'number' ? err.code : -1) : 0;
-      if (r.ok) {
-        // 만든 사람을 묶음에 적어 둔다(묶음 목록에 보인다)
-        try {
-          const data = JSON.parse(fs.readFileSync(out, 'utf8'));
-          const who = await scen.ghLogin().catch(() => '');
-          if (who && !data.createdBy) fs.writeFileSync(out, JSON.stringify(Object.assign({ suite: data.suite, createdBy: who }, data), null, 1));
-        } catch (_) { /* 작성자 없이 둔다 */ }
-        r.file = `${suite}.json`;
-      }
-      resolve(r);
-    });
+  return new Promise((resolve, reject) => {
+    execFile(kit.readSettings().python, [path.join(kit.P.kit, 'tools', 'sheet_tc.py'), file, '--out', out],
+      { cwd: kit.P.kit, env: kit.toolEnv(), timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+        const text = String(stdout || '');
+        let r = null;
+        try { r = text.includes('{') ? JSON.parse(text.slice(text.indexOf('{'))) : null; } catch (_) { r = null; }
+        if (!r || !r.ok) return reject(new Error((r && r.error) || String(stderr || (err && err.message) || '시트를 읽지 못했다').trim().slice(-300)));
+        resolve(r);
+      });
   });
 }
-handle('sheet:import', (url, suite) => {
-  sheetExportUrl(url);
-  return runSheetImport(String(url).trim(), suite);
-});
-handle('sheet:viaBrowser', async (url, suite) => {
-  if (!SUITE_NAME.test(suite)) throw new Error('묶음 이름은 영문 소문자·숫자·-·_ 로 쓴다(예: v127-basic)');
-  const exportUrl = sheetExportUrl(url);
+async function finishLoad(url, id, xlsx, title) {
+  const r = await parseXlsx(xlsx, id);
+  const cache = readJsonFile(path.join(SHEET_CACHE, `${id}.json`), {});
+  cache.url = url; cache.id = id; cache.loadedAt = new Date().toISOString();
+  if (title) cache.title = title;
+  fs.writeFileSync(path.join(SHEET_CACHE, `${id}.json`), JSON.stringify(cache));
+  // 팀이 같은 시트를 보게 링크를 저장소에 둔다. 링크가 바뀔 때만 쓴다(읽을 때마다 바뀌면 공유할 것이 계속 생긴다)
+  const cur = repoPath('sheets', 'current.json');
+  const prev = readJsonFile(cur, {});
+  if (prev.url !== url) {
+    fs.mkdirSync(path.dirname(cur), { recursive: true });
+    fs.writeFileSync(cur, JSON.stringify({ url, id, title: cache.title, setBy: await scen.ghLogin().catch(() => ''), setAt: cache.loadedAt }, null, 1) + '\n');
+  }
+  return { tabs: r.tabs, tcs: r.tcs, skipped: r.skipped, title: cache.title };
+}
+handle('sheet:load', async (url) => {
+  url = String(url || '').trim();
+  const id = sheetIdOf(url);
+  const exportUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`;
+  fs.mkdirSync(SHEET_CACHE, { recursive: true });
+  // 1) 링크 공개 시트면 바로 받는다
+  try {
+    const res = await fetch(exportUrl, { redirect: 'follow', signal: AbortSignal.timeout(120000) });
+    if (res.ok && /spreadsheetml|octet-stream/.test(res.headers.get('content-type') || '')) {
+      const tmp = path.join(SHEET_CACHE, `${id}.xlsx`);
+      fs.writeFileSync(tmp, Buffer.from(await res.arrayBuffer()));
+      try { return await finishLoad(url, id, tmp); } finally { fs.rmSync(tmp, { force: true }); }
+    }
+  } catch (_) { /* 회사 계정 전용 — 브라우저로 */ }
+  // 2) 평소 브라우저로 내려받는다. 시트가 크면(이미지 포함) 수백 MB 라 몇 분 걸릴 수 있다
   const downloads = app.getPath('downloads');
   const since = Date.now() - 2000;
   await shell.openExternal(exportUrl);
-  const deadline = Date.now() + 180000;
+  const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 2000));
     let found = null;
     for (const name of fs.readdirSync(downloads)) {
-      if (!name.toLowerCase().endsWith('.csv')) continue;
+      if (!name.toLowerCase().endsWith('.xlsx')) continue;
       const full = path.join(downloads, name);
       const st = fs.statSync(full);
-      if (st.mtimeMs >= since && st.size > 0 && (!found || st.mtimeMs > found.mtime)) found = { full, mtime: st.mtimeMs, size: st.size };
+      if (st.mtimeMs >= since && st.size > 0 && (!found || st.mtimeMs > found.mtime)) found = { full, name, mtime: st.mtimeMs, size: st.size };
     }
-    if (found) {
-      await new Promise((r) => setTimeout(r, 800)); // 쓰기가 끝났는지 — 크기가 그대로인지 본다
-      if (fs.statSync(found.full).size !== found.size) continue;
-      const r = await runSheetImport(found.full, suite, String(url).trim());
-      r.csv = found.full;
-      return r;
+    if (!found) continue;
+    await new Promise((r) => setTimeout(r, 1500));
+    if (fs.statSync(found.full).size !== found.size) continue;
+    const result = await finishLoad(url, id, found.full, found.name.replace(/( \(\d+\))?\.xlsx$/i, ''));
+    // 앱이 받게 한 파일이다 — 읽었으면 다운로드 폴더에서 지운다(시트가 크다)
+    fs.rmSync(found.full, { force: true });
+    return result;
+  }
+  throw new Error('10분 안에 다운로드 폴더에 xlsx 가 생기지 않았다 — 브라우저에서 회사 계정으로 로그인했는지 보고, 받은 xlsx 를 「xlsx 파일로」로 고른다');
+});
+handle('sheet:loadFile', async (url) => {
+  const pick = await dialog.showOpenDialog(win, { title: '테스트 시트 xlsx', properties: ['openFile'], filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+  if (pick.canceled || !pick.filePaths.length) return null;
+  const file = pick.filePaths[0];
+  const id = url ? sheetIdOf(url) : `file-${path.basename(file, '.xlsx').replace(/[^\w가-힣.-]/g, '_')}`;
+  return finishLoad(url || '', id, file, path.basename(file, '.xlsx'));
+});
+// 지금 시트 — 저장소의 링크와, 이 컴퓨터에서 읽어 둔 TC
+handle('sheet:current', () => {
+  const cur = readJsonFile(repoPath('sheets', 'current.json'), null);
+  let cache = null;
+  if (cur && cur.id) cache = readJsonFile(path.join(SHEET_CACHE, `${cur.id}.json`), null);
+  if (!cache && fs.existsSync(SHEET_CACHE)) {
+    // 링크 없이 파일로 읽은 것 — 가장 최근 것
+    const files = fs.readdirSync(SHEET_CACHE).filter((f) => f.endsWith('.json')).map((f) => path.join(SHEET_CACHE, f));
+    files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    if (!cur && files[0]) cache = readJsonFile(files[0], null);
+  }
+  return { current: cur, cache };
+});
+// 시나리오 파일 — scenarios/<탭 이름>/<TC 키>.json
+function scenarioIndex() {
+  const root = repoPath('scenarios');
+  const out = [];
+  if (!fs.existsSync(root)) return out;
+  for (const tab of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!tab.isDirectory()) continue;
+    for (const f of fs.readdirSync(path.join(root, tab.name))) {
+      if (!f.endsWith('.json')) continue;
+      const data = readJsonFile(path.join(root, tab.name, f), null);
+      if (!data) { out.push({ file: `${tab.name}/${f}`, broken: true }); continue; }
+      out.push({ file: `${tab.name}/${f}`, key: data.key || f.replace(/\.json$/, ''), tab: data.tab || tab.name, no: data.no,
+        expected: (data.tc || {}).expected || '', steps: ((data.case || {}).steps || []).length, notes: (data.notes || []).length,
+        createdBy: data.createdBy || '', updatedAt: data.updatedAt || '' });
     }
   }
-  throw new Error('3분 안에 다운로드 폴더에 CSV 가 생기지 않았다 — 브라우저에서 회사 계정으로 로그인했는지 보고, 받은 CSV 를 「CSV 파일로」로 고른다');
+  return out;
+}
+handle('scenarios:list', () => scenarioIndex());
+handle('scenarios:read', (file) => {
+  const root = repoPath('scenarios');
+  const target = path.resolve(root, String(file || ''));
+  if (!target.startsWith(root + path.sep) || !target.endsWith('.json')) throw new Error('시나리오 폴더 안의 파일이 아니다');
+  return readJsonFile(target, null);
 });
-handle('sheet:importFile', async (url, suite) => {
-  const pick = await dialog.showOpenDialog(win, { title: '테스트 시트 CSV', properties: ['openFile'], filters: [{ name: 'CSV', extensions: ['csv'] }] });
-  if (pick.canceled || !pick.filePaths.length) return null;
-  return runSheetImport(pick.filePaths[0], suite, String(url || '').trim());
-});
+handle('scenarios:dir', () => repoPath('scenarios'));
 handle('external:open', (url) => {
   if (!/^https:\/\/docs\.google\.com\//.test(String(url))) throw new Error('구글 문서 주소만 연다');
   return shell.openExternal(url);

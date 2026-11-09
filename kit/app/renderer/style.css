@@ -316,3 +316,29 @@ table.rewinds { margin: 4px 0 8px; font-size: 0.9em; }
 .rep-path { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
 .rep-path code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; }
 .suite-meta { margin-left: 8px; }
+
+/* 아웃게임 — 시트 TC 목록 */
+.outgame .toolbar label select { max-width: 320px; }
+.og-search { min-width: 260px; }
+.og-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.og-split.with-detail { grid-template-columns: minmax(0, 1fr) 420px; }
+.og-list { min-width: 0; }
+table.tc td { vertical-align: top; }
+table.tc td.no { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+table.tc td.path { color: var(--muted); font-size: 12px; min-width: 160px; }
+table.tc td.exp { white-space: pre-wrap; min-width: 280px; }
+table.tc td.st { white-space: nowrap; font-size: 12px; }
+table.tc tr.sec td { background: var(--surface-alt); font-weight: 600; }
+table.tc tr.tc-row { cursor: default; }
+table.tc tr.tc-row:hover td { background: var(--row-hover); }
+table.tc tr.tc-row.sel td { background: var(--focus); }
+.st-Pass { color: var(--pass); } .st-Fail { color: var(--danger); font-weight: 600; } .st-Block { color: var(--warn); } .st-NT { color: var(--muted); }
+.sc-ok { color: var(--pass); font-weight: 700; }
+.sc-warn { color: var(--warn); font-size: 12px; }
+.og-detail { position: sticky; top: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 12px 14px; max-height: calc(100vh - 220px); overflow: auto; }
+.og-detail h3 { margin: 0 0 6px; }
+.og-detail .exp { white-space: pre-wrap; margin: 6px 0 10px; }
+.og-detail dl { display: grid; grid-template-columns: 70px 1fr; gap: 3px 8px; margin: 0 0 10px; font-size: 12px; }
+.og-detail dt { color: var(--muted); }
+.og-detail dd { margin: 0; white-space: pre-wrap; }
+.og-detail .notes { margin: 6px 0 10px; padding-left: 18px; }
