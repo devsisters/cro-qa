@@ -52,7 +52,8 @@
 ### 2-3. 단계와 기대값을 쓴다
 
 1. **이미 아는 화면부터 본다.** `tools/device_flows/SCREENS.md`(화면 ↔ 노드 이름 대응표), `cases/` 의 다른 묶음, `tools/device_flows/flows/`. 아는 경로는 탐색하지 않는다.
-2. 처음 보는 화면은 기기 하나에서 탐색한다: `gb_device.py scene`, `gb_device.py tree --max-nodes 8000`, `gb_device.py tap --node "<이름 또는 글자>"`.
+2. 처음 보는 화면은 기기 하나에서 탐색한다: `python3 tools/ui_find.py --platform <ios|aos>`(화면 요약), 필요하면 `--owner`·`--text`·`--buttons` 로 좁힌다. 누르기는 `gb_device.py tap --node "<이름 또는 글자>"`.
+   **트리 전체를 읽지 않는다** — `gb_device.py tree` 출력이나 실행 결과의 `*.tree.json` 을 통째로 Read 하지 않는다. 한 화면이 수백 노드·수백 KB 라 토큰을 가장 많이 쓰는 곳이다. 지난 실행의 화면은 `ui_find.py --file <…tree.json>` 으로 본다. `ui_find.py` 로 안 되는 것만 `gb_device.py tree` 를 `--max-nodes` 로 작게 받아 본다.
    gb_device.py 명령에는 항상 `--platform ios|android --device <ID> --checkout "$PWD/workspace"` 를 붙인다(checkout 은 **절대 경로**여야 한다). 트리는 커서 파일로 받아 필요한 부분만 본다. 찾은 화면·버튼은 **`SCREENS.md` 에 더한다**(다음 시트에서 탐색이 줄어든다).
 3. 시트의 「기대 결과」를 `checkpoint.expect` 의 트리 조건으로 옮긴다. **시트에 적힌 것만** 옮긴다. 시트에 없는 기대를 지어내지 않는다. 트리로 옮길 수 없는 기대(색·모양·연출)는 정답지 이미지 비교에 맡기고 케이스 `note` 에 적는다.
 4. 바뀌는 값(재화·남은 시간·랜덤 결과·계정마다 다른 목록)은 `expect` 에 값으로 쓰지 않는다. 숫자가 든 글자는 정답지 비교에서 자동으로 빠지고, 그 밖의 바뀌는 영역은 `mask` 로 뺀다.
@@ -139,7 +140,7 @@ python3 tools/rewind_runner.py cases/<묶음>.json --platform aos     # Android
 
 1. `runs/<run>/judge-request.md` 가 있으면 **qa-judge 서브에이전트**(`.claude/agents/qa-judge.md`)에게 「`<경로>` 를 판정해」라고 넘긴다. 직접 판정하지 않는다 — 찍은 쪽이 판정하면 놓친다.
 2. 돌려받은 JSON 배열을 `runs/<run>/verdicts.json` 으로 저장하고 `python3 tools/judge.py apply runs/<run> runs/<run>/verdicts.json`.
-3. **DEFECT 는 트리로 다시 확인한다.** 그 체크포인트의 `*.tree.json` 에서 문제의 노드(글자·rect·visible·clipped)를 찾아 근거를 붙인다. 트리가 반박하면(예: 노드가 정상 위치에 있음) `{"verdict": "ALLOWED", "by": "main-recheck", "reason": "<트리 근거>"}` 로 다시 apply 한다.
+3. **DEFECT 는 트리로 다시 확인한다.** 그 체크포인트의 `*.tree.json` 에서 문제의 노드(글자·rect·visible·clipped)를 `tools/ui_find.py --file <…tree.json> --owner/--inst/--text` 로 찾아 근거를 붙인다(파일 통째로 읽지 않는다). 트리가 반박하면(예: 노드가 정상 위치에 있음) `{"verdict": "ALLOWED", "by": "main-recheck", "reason": "<트리 근거>"}` 로 다시 apply 한다.
 4. UNSURE 는 사람에게 캡처 경로와 함께 묻는다.
 
 ### 정답지 만들기 — 사람이 승인한다

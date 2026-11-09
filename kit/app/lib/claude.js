@@ -29,7 +29,7 @@ function ruleFor(denial, always) {
 function scenarioArgs() {
   const dir = kit.scenarioRoot();
   if (!dir) return [];
-  return ['--add-dir', dir, '--append-system-prompt', `이 QA 앱의 케이스는 키트 cases/ 가 아니라 시나리오 저장소 ${dir} 에 있다 — 케이스 ${dir}/cases, 아웃게임 시나리오 ${dir}/scenarios(형식은 ${dir}/scenarios/README.md, 돌리기는 키트의 tools/scenario_run.py), 문서(md) ${dir}/docs, 프리셋 ${dir}/presets. 케이스·시나리오를 만들거나 고치면 그 폴더에 쓴다. 시나리오를 고칠 때 사람이 말한 교정·유의사항은 그 파일의 notes 에 남긴다. 이 폴더는 팀이 공유하는 git 저장소다. 충돌 해결을 부탁받으면 양쪽 변경을 모두 살려 합치고, 합친 결과를 사용자에게 보여 준 뒤 확인을 받고 커밋·올린다. 강제 push·히스토리 재작성은 하지 않는다.`];
+  return ['--add-dir', dir, '--append-system-prompt', `이 QA 앱의 케이스는 키트 cases/ 가 아니라 시나리오 저장소 ${dir} 에 있다 — 케이스 ${dir}/cases, 아웃게임 시나리오 ${dir}/scenarios(형식은 ${dir}/scenarios/README.md, 돌리기는 키트의 tools/scenario_run.py), 문서(md) ${dir}/docs, 프리셋 ${dir}/presets. 케이스·시나리오를 만들거나 고치면 그 폴더에 쓴다. 시나리오를 고칠 때 사람이 말한 교정·유의사항은 그 파일의 notes 에 남긴다. 게임 화면 정보는 트리 전체를 읽지 말고 키트의 tools/ui_find.py(화면 요약·걸러 보기)로 필요한 부분만 본다 — 트리 전체가 토큰을 가장 많이 쓴다. 이 폴더는 팀이 공유하는 git 저장소다. 충돌 해결을 부탁받으면 양쪽 변경을 모두 살려 합치고, 합친 결과를 사용자에게 보여 준 뒤 확인을 받고 커밋·올린다. 강제 push·히스토리 재작성은 하지 않는다.`];
 }
 
 function claudeCommand() {
