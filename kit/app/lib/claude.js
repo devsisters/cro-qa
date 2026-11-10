@@ -11,7 +11,9 @@ const CHAT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash(python3 tools
   `Bash(python3 ${kit.P.kit}/tools/*)`, // 키트 도구를 전체 경로로 불러도 같은 허용으로 본다
   // 기본 기능 결과 쓰기 — 각자의 Claude 계정에 연결된 Google Sheets 로 시트를 읽고 쓴다(basic/README.md 「결과 쓰기」)
   'mcp__claude_ai_Google_Sheets__get_spreadsheet', 'mcp__claude_ai_Google_Sheets__get_values',
-  'mcp__claude_ai_Google_Sheets__update_values', 'mcp__claude_ai_Google_Sheets__update_spreadsheet'];
+  'mcp__claude_ai_Google_Sheets__update_values', 'mcp__claude_ai_Google_Sheets__update_spreadsheet',
+  // 결과 캡처 — 버전 폴더를 먼저 찾고(없을 때만 만든다) 캡처를 올린다. 지우기(trash)는 넣지 않는다
+  'mcp__claude_ai_Google_Drive__search_files', 'mcp__claude_ai_Google_Drive__create_file', 'mcp__claude_ai_Google_Drive__get_file_metadata'];
 
 /** 거절된 도구 호출 → 허용 규칙. 「이번만」은 그 명령 그대로, 「항상」은 같은 도구(예: python3 tools/x.py)의 모든 인자 */
 function ruleFor(denial, always) {

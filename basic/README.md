@@ -98,7 +98,7 @@ cd kit
    - `python3 tools/basic_sheet.py add-tab --version <버전>` 의 `requests` 를 `update_spreadsheet` 로 보낸다. 응답의 `sheetId` 를 받는다.
    - `python3 tools/basic_sheet.py create --version <버전> --sheet-id <sheetId>` 의 `values` 와 `summary` 를 `update_values` 로, `requests` 를 `update_spreadsheet` 로 보낸다.
 3. 캡처를 올린다. 실행 폴더마다 `python3 tools/basic_sheet.py shots --run runs/<실행>` 을 본다.
-   - `folder.id` 가 비어 있으면(`folder.todo`) 캡처 폴더(`captureFolderId`) 아래에 버전 탭 이름의 폴더를 만들고, 그 id 를 `sheet.json` 의 `captureFolders` 에 적는다(저장소에 커밋해 팀이 같은 폴더를 쓴다).
+   - `folder.id` 가 비어 있으면 **먼저 찾는다** — Google Drive `search_files` 에 `folder.search` 질의를 그대로 넣는다. 다른 사람·다른 컴퓨터가 이미 만든 버전 폴더가 있으면 그 폴더에 쌓는다(여럿이면 만든 시각이 가장 이른 것). 없을 때만 캡처 폴더(`captureFolderId`) 아래에 버전 탭 이름의 폴더를 만든다. 찾았거나 만든 id 는 `sheet.json` 의 `captureFolders` 에 적는다(저장소에 커밋해 팀이 같은 폴더를 쓴다).
    - `files` 중 `uploaded: false` 인 것을 Google Drive `create_file` 로 올린다 — `title` 그대로, `parentId` 는 `folder.id`, `contentMimeType` 은 `mime`, `disableConversionToGoogleType: true`, `base64Content` 는 `sha256:<sha256>:<path>` 파일 참조(`path` 는 도구가 만든 축소 사본). 돌려받은 id 를 `runs/<실행>/drive.json` 에 `{"files": {"<rel>": "<id>"}}` 로 적는다.
 4. 지금 값을 읽는다. `get_values` 로 `'<버전>'!A1:D` 와 `'<버전>'!H1:M` 을 읽고, 응답 JSON 을 그대로 `runs/<실행>/sheet-ids.json` · `runs/<실행>/sheet-cols.json` 에 저장한다.
 5. 쓸 칸을 정한다.

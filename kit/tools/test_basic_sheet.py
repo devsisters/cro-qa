@@ -157,6 +157,15 @@ class ResultCellsTest(unittest.TestCase):
         self.assertTrue(p['summary']['values'][1][2].startswith('=COUNTIF($K$2:$K,P2'))
         self.assertTrue(all(r.get(next(iter(r)), {}) for r in p['requests']))
 
+    def test_capture_folder_searches_before_creating(self):
+        info = {'captureFolderId': 'P', 'captureFolders': {'시험': 'X'}}
+        self.assertEqual(basic_sheet.capture_folder(info, '시험'), {'tab': '시험', 'id': 'X', 'parent': 'P'})
+        f = basic_sheet.capture_folder(info, '14.50')
+        self.assertEqual(f['id'], '')
+        self.assertEqual(f['search'], "parentId = 'P' and title = '14.50' and mimeType = 'application/vnd.google-apps.folder' and trashed = false")
+        self.assertTrue(f['todo'].startswith('먼저 Google Drive search_files'))
+        self.assertIn("title = 'a\\'b'", basic_sheet.capture_folder({'captureFolderId': 'P'}, "a'b")['search'])
+
     def test_quote_tab_with_apostrophe(self):
         self.assertEqual(basic_sheet.quote_tab("14.50 '재"), "'14.50 ''재'")
 

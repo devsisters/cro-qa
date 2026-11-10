@@ -421,6 +421,19 @@ def add_tab_request(version, rows):
                                                                                     'frozenRowCount': 1, 'frozenColumnCount': 1}}}}
 
 
+def capture_folder(info, version):
+    """버전 탭의 캡처 폴더 — {tab, id, parent} 와 id 가 없을 때 할 일(search → 있으면 그 폴더, 없으면 create)"""
+    folder = {'tab': version, 'id': (info.get('captureFolders') or {}).get(version, ''), 'parent': info.get('captureFolderId', '')}
+    if not folder['id']:
+        name = version.replace('\\', '\\\\').replace("'", "\\'")
+        folder['search'] = (f"parentId = '{folder['parent']}' and title = '{name}' "
+                            "and mimeType = 'application/vnd.google-apps.folder' and trashed = false")
+        folder['todo'] = (f'먼저 Google Drive search_files 로 search 의 질의를 찾는다. 결과가 있으면 그 폴더 id 를 쓴다'
+                          f'(여럿이면 만든 시각이 가장 이른 것). 없을 때만 캡처 폴더({folder["parent"]}) 아래에 「{version}」 폴더를 만든다'
+                          f'(create_file, application/vnd.google-apps.folder). 쓴 id 는 basic/sheet.json 의 captureFolders["{version}"] 에 적는다')
+    return folder
+
+
 def load_tcs():
     if not os.path.exists(TC_FILE):
         raise OSError(f'TC 사본이 없다: {TC_FILE} — QA 앱 「기본 기능」 탭에서 「시트에서 다시 읽기」를 먼저 한다')
@@ -505,12 +518,10 @@ def main():
                               'mime': 'image/jpeg' if path.endswith('.jpg') else 'image/png',
                               'title': f'{meta.get("version", "")}_{meta.get("platform", "")}_{tc}_{name}_{os.path.basename(os.path.normpath(a.run))[-15:]}'
                                        + os.path.splitext(path)[1]})
-            # 올릴 폴더 — 캡처 폴더 아래 버전 탭 이름의 폴더. 아직 없으면 에이전트가 만들고 sheet.json captureFolders 에 적는다
+            # 올릴 폴더 — 캡처 폴더 아래 버전 탭 이름의 폴더. id 를 모르면 먼저 찾고(다른 사람·다른 컴퓨터가 이미 만들었을 수 있다),
+            # 없을 때만 만든다. 찾았거나 만든 id 는 sheet.json captureFolders 에 적는다
             version = str(meta.get('version', ''))
-            folder = {'tab': version, 'id': (info.get('captureFolders') or {}).get(version, ''), 'parent': info.get('captureFolderId', '')}
-            if not folder['id']:
-                folder['todo'] = (f'캡처 폴더({folder["parent"]}) 아래에 「{version}」 폴더를 만들고(create_file, folder) '
-                                  f'그 id 를 basic/sheet.json 의 captureFolders["{version}"] 에 적는다')
+            folder = capture_folder(info, version)
             print(json.dumps({'ok': True, 'run': a.run, 'folder': folder, 'driveFile': os.path.join(a.run, DRIVE_FILE), 'files': files},
                              ensure_ascii=False, indent=1))
         elif a.cmd == 'rows':
