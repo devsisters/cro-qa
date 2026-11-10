@@ -174,4 +174,8 @@ class Device:
                  and n.get('rect') and n['rect'][2] <= 60 and n['rect'][3] <= 60]
         if small:
             return self.tap_node(max(small, key=lambda n: n['rect'][0] + n['rect'][1]), f'close {owner}')
+        # 닫기 버튼 없이 「Touch!」 만 있는 연출 화면(신규 유저 특별 보상 PopUpdateHighlight 등) — 화면 아무 데나 누르면 닫힌다
+        if [n for n in ns if n.get('owner') == owner and n.get('text') == 'Touch!']:
+            w, h = self.visible_size()[:2]
+            return self.tap_xy(w / 2, h / 2, f'close {owner} (Touch!)')
         return None

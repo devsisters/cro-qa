@@ -83,6 +83,15 @@ class FlowlibTest(unittest.TestCase):
         taps = [c for c in bridge.calls if c[0] == 'tap']
         self.assertEqual(taps[-1][1:5], ('--x', '510.0', '--y', '310.0'))
 
+    def test_close_popup_taps_screen_center_when_only_touch_text(self):
+        bridge = FakeBridge(nodes=[{'owner': 'PopUpdateHighlight', 'text': 'Touch!'}])
+        device(bridge).close_popup('PopUpdateHighlight')
+        taps = [c for c in bridge.calls if c[0] == 'tap']
+        self.assertEqual(taps[-1][1:5], ('--x', '284.0', '--y', '160.0'))
+
+    def test_close_popup_ignores_touch_text_of_other_owner(self):
+        self.assertIsNone(device(FakeBridge(nodes=[{'owner': 'Other', 'text': 'Touch!'}])).close_popup('Pop'))
+
     def test_close_popup_returns_none_when_unknown(self):
         self.assertIsNone(device(FakeBridge(nodes=[])).close_popup('Pop'))
 

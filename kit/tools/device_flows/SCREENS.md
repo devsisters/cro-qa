@@ -11,7 +11,7 @@
 | 약관 동의(새 계정) | `PopGameAgreeKor` | — | `checkBtn1`(이용약관) `checkBtn2`(개인정보) `_btnAgreeDim`「시작」 — 선택 항목(`checkBtn5·6`)은 누르지 않는다 | 2026-11-03 · ios·aos |
 | 튜토리얼(새 계정) | `SceneTutorialMaster` | `SceneTutorial004` | 토글 `_btnSuperUser` `_btnSkipTutorial`(opacity 255 = 켜짐), 진행 `_btnEscape`「탈출시키기」 | 2026-11-03 · ios·aos |
 | 공지 | `PopNotice` | — | `_btnClose` | 2026-11-03 · 3 |
-| 첫 실행 팝업들 | `PopUpdateHighlight` · `PopJukeboxSongGet` · `PopBrownTwoButton`(로비스킨) · `SceneUaJumpingEventMain` | — | 닫기(`_btnClose`·`_btnNo`·오른쪽 위 작은 버튼) | 2026-11-03 · ios·aos |
+| 첫 실행 팝업들 | `PopUpdateHighlight` · `PopJukeboxSongGet` · `PopBrownTwoButton`(로비스킨) · `SceneUaJumpingEventMain` | — | 닫기(`_btnClose`·`_btnNo`·오른쪽 위 작은 버튼). `PopUpdateHighlight`(신규 유저 특별 보상)는 닫기 버튼이 없고 글자「Touch!」만 있다 → 화면 가운데 탭 | 2026-11-03 · ios·aos, 2026-11-10 ios |
 | 점핑 이벤트 | `SceneUaJumpingEventMain` | — | 자동화는 닫기만 한다. 아래 「JUMP」 → 보상 수령을 하면 그 계정에서는 더 뜨지 않는다(개발자 안내 2026-11-04) — 계정 상태가 바뀌므로 사람이 하거나 허락받고 한다 | 2026-11-04 · 안내 |
 | 로비 | `SceneNavigator` | `#parent` / `_btnShopGacha` | `_btnShopGacha`「뽑기」, `_btnPlay` | 2026-11-03 · 3 |
 | 상태바(로비 밖) | — | `#parent` / `_btnBack` `_btnHome` | — | 2026-11-03 · 3 |

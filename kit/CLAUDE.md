@@ -122,6 +122,7 @@ ERROR(진행 실패) 분류와 할 일:
 - MID 는 화면의 「MID : …」 라벨에서 읽는다(케이스 파일 `mid` 로 고정할 수도 있다)
 - 직접 확인: `python3 tools/timemachine.py get <서버>`, `python3 tools/timemachine.py set <서버> +1d --reason <케이스>`(기록은 `workspace/timemachine-log.jsonl`)
 - 마카롱 **Delete 는 누르지 않는다**. 도구도 누르지 않는다
+- 키트 Chrome(포트 9444)이 꺼져 있으면 마카롱 단계가 `fetch failed` 로 멈춘다. 실행기가 마카롱을 열기 전에 꺼져 있으면 `node tools/web/chrome_cdp.mjs launch` 로 띄운다. **새 컴퓨터는 처음 한 번 사람이 그 창에서 stove·마카롱에 로그인한다**(SETUP.md 5장, 로그인은 `workspace/chrome-profile` 에 남는다). 확인: `python3 tools/doctor.py --web`
 - 키트 Chrome 하나를 모든 기기가 같이 쓴다. 마카롱 단계는 이 컴퓨터에서 한 번에 한 실행만 들어간다(`workspace/macaron.lock` 파일 잠금) — 두 기기를 같이 돌리면 늦게 온 쪽이 「다른 기기가 마카롱을 쓰는 중」을 남기고 기다린다
 
 ### 3-2. 인게임 자동 되감기 (kind: rewind)
@@ -207,6 +208,8 @@ Google Sheets 연결(편집 권한)로 원본 시트에 쓴다:
 - 새 계정(재설치)은 약관 → 튜토리얼이 나온다. 약관은 **필수 두 개만**, 튜토리얼은 디버그 토글 「Super User」·「Skip Tutorial」 후 「탈출시키기」(라이브러리가 자동으로 한다)
 - 게임 화면·트리·시트를 승인되지 않은 외부 서비스로 보내지 않는다
 - 같은 기기를 두 프로세스가 동시에 조작하지 않는다
+- `device busy`(BRIDGE) 는 같은 기기를 다른 실행이 쓰는 중이라는 뜻이다(앱의 실행·Claude 탭·터미널 어디서든). 케이스를 고치지 말고 `pgrep -fl "case_runner|basic_run|scenario_run|rewind_runner"` 로 남은 실행을 찾아 끝난 뒤 다시 돌린다
+- 닫기 버튼이 없고 「Touch!」 글자만 있는 연출 화면(신규 유저 특별 보상 `PopUpdateHighlight` 등)은 화면 가운데를 눌러 닫는다(`flowlib.close_popup` 이 한다). `NOT_REACHED … 닫는 법을 모르는 화면` 이 나면 그 화면의 트리에서 닫는 노드를 찾아 `SCREENS.md` 에 더한다
 - 캡처는 `tools/gb_device.py screenshot` 으로만 가져온다. iOS 는 devicectl 화면 캡처를 쓴다 — 앱 컨테이너(`appDataContainer`) 복사로 우회하지 않는다. 사내 배포 빌드는 컨테이너 접근이 막혀 `ContainerLookupErrorDomain error 3` 이 난다. 캡처 명령이 없다고 나오면 Xcode 를 올린다(`doctor.py` 가 점검한다)
 - 정답지 승인, 케이스의 `auto: false` 판단 근거, 시트에 없는 기대를 추가하는 것은 사람에게 확인한다
 - 막혔으면 한 번 더 확인하고 나서 사람에게 올린다. 실행한 명령과 exit code 를 그대로 적는다

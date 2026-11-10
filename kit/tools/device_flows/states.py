@@ -37,7 +37,20 @@ def _run(cmd):
         return r.returncode, {'raw': r.stdout[-300:], 'err': r.stderr[-300:]}
 
 
+def _ensure_chrome():
+    """키트 Chrome(CDP 포트)이 꺼져 있으면 띄운다 — 새 컴퓨터·재부팅·창을 닫은 뒤에는 꺼져 있다(안 띄우면 fetch failed).
+    처음 한 번은 사람이 그 창에서 stove·마카롱에 로그인해야 한다(SETUP.md). 로그인은 프로필에 남는다."""
+    code, data = _run(['node', ASIDE, 'status'])
+    if code == 0 and data.get('cdp'):
+        return
+    code, data = _run(['node', ASIDE, 'launch'])
+    if code or not data.get('ok'):
+        raise FlowFailure('BRIDGE', 'macaron open', f'키트 Chrome 을 띄우지 못했다: {data} — `node tools/web/chrome_cdp.mjs launch` 를 직접 돌려 보고, '
+                          'Node.js·Chrome 설치와 키트 Chrome 창의 stove·마카롱 로그인(SETUP.md)을 확인한다')
+
+
 def _open(env, mid):
+    _ensure_chrome()
     url = (f'https://macaron.{env}.stove.devspie.com/couchbase_modifier/?bucket=gb-member&key='
            + urllib.parse.quote(f'member:{mid}'))
     code, data = _run(['node', ASIDE, 'open', url])
