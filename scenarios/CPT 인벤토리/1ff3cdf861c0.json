@@ -210,39 +210,6 @@
    "text": "그리고 마이쿠키 앞으로 정렬 눌렀을때 초록 배경의 쿠키가 앞으로오고 껐을때 정렬 순서에 맞게 가는지도 체크해줘"
   }
  ],
- "lastRun": {
-  "at": "2026-11-09T18:04:47",
-  "platform": "aos",
-  "verdict": "PASS",
-  "reason": "",
-  "run": "runs/scenario-aos-20261109-180430",
-  "checkpoints": {
-   "lobby-cookie-button": {
-    "verdict": "PASS",
-    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-lobby-cookie-button-1794215076174.png",
-    "failed": [],
-    "human": ""
-   },
-   "cpt-inventory": {
-    "verdict": "PASS",
-    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-cpt-inventory-1794215079892.png",
-    "failed": [],
-    "human": ""
-   },
-   "cpt-mycookie-first-on": {
-    "verdict": "PASS",
-    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-cpt-mycookie-first-on-1794215083087.png",
-    "failed": [],
-    "human": ""
-   },
-   "cpt-mycookie-first-off": {
-    "verdict": "PASS",
-    "shot": "runs/scenario-aos-20261109-180430/1ff3cdf861c0/aos-cpt-mycookie-first-off-1794215086258.png",
-    "failed": [],
-    "human": ""
-   }
-  }
- },
  "scoring": [
   {
    "name": "cpt-inventory",

@@ -36,9 +36,18 @@ class ScenarioTest(unittest.TestCase):
             os.makedirs(out)
             with open(os.path.join(out, 'results.json'), 'w', encoding='utf-8') as f:
                 json.dump({'cases': [{'id': 'abc123', 'verdict': 'PASS', 'checkpoints': [{'name': 'p1', 'verdict': 'PASS', 'shot': None}]}]}, f)
-            scenario_run.record_last_run([path], 'aos', out)
-            last = json.load(open(path, encoding='utf-8'))['lastRun']
+            with open(path, encoding='utf-8') as f:
+                data = json.load(f)
+            data['lastRun'] = {'verdict': 'FAIL', 'run': 'runs/옛 실행'}  # 예전 방식으로 시나리오 파일에 남은 결과
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f)
+            local = os.path.join(d, 'local')
+            scenario_run.record_last_run([path], 'aos', out, root=local)
+            with open(os.path.join(local, 'tab', 'abc123.json'), encoding='utf-8') as f:
+                last = json.load(f)
             self.assertEqual((last['verdict'], last['platform'], last['checkpoints']['p1']['verdict']), ('PASS', 'aos', 'PASS'))
+            with open(path, encoding='utf-8') as f:
+                self.assertNotIn('lastRun', json.load(f), '공유되는 시나리오 파일에는 마지막 결과를 남기지 않는다')
 
 
 class ConditionScoringTest(unittest.TestCase):

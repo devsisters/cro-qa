@@ -115,6 +115,9 @@ handle('presets:server', async () => {
 // 시트 전체를 xlsx 로 받아 탭별 TC 를 읽는다. 링크 공개 시트는 바로 받고, 회사 계정 전용이면 평소 브라우저(이미 로그인됨)로
 // 내려받게 한 뒤 다운로드 폴더에 새로 생긴 xlsx 를 읽는다. 앱은 로그인 정보를 다루지 않는다
 const SHEET_CACHE = path.join(kit.P.kit, 'workspace', 'sheet-cache');
+// 시나리오의 마지막 실행 결과 — 실행 폴더(runs/)처럼 이 컴퓨터에만 둔다(tools/scenario_run.py 가 적는다)
+const LAST_RUNS = path.join(kit.P.kit, 'workspace', 'scenario-runs');
+const lastRunOf = (rel) => readJsonFile(path.join(LAST_RUNS, rel), null);
 function sheetIdOf(url) {
   const m = /\/spreadsheets\/d\/([\w-]+)/.exec(String(url || ''));
   if (!m) throw new Error('구글 스프레드시트 링크가 아니다(docs.google.com/spreadsheets/d/… 주소를 넣는다)');
@@ -223,7 +226,7 @@ function scenarioIndex() {
       if (!data) { out.push({ file: `${tab.name}/${f}`, broken: true }); continue; }
       out.push({ file: `${tab.name}/${f}`, key: data.key || f.replace(/\.json$/, ''), tab: data.tab || tab.name, no: data.no,
         expected: (data.tc || {}).expected || '', steps: ((data.case || {}).steps || []).length, notes: (data.notes || []).length,
-        scoring: (data.scoring || []).length, lastVerdict: (data.lastRun || {}).verdict || '',
+        scoring: (data.scoring || []).length, lastVerdict: (lastRunOf(path.join(tab.name, f)) || {}).verdict || '',
         createdBy: data.createdBy || '', updatedAt: data.updatedAt || '' });
     }
   }
@@ -234,7 +237,10 @@ handle('scenarios:read', (file) => {
   const root = repoPath('scenarios');
   const target = path.resolve(root, String(file || ''));
   if (!target.startsWith(root + path.sep) || !target.endsWith('.json')) throw new Error('시나리오 폴더 안의 파일이 아니다');
-  return readJsonFile(target, null);
+  const data = readJsonFile(target, null);
+  // 시나리오 파일에 남은 옛 lastRun 은 다른 컴퓨터의 실행 폴더를 가리키므로 쓰지 않는다
+  if (data) data.lastRun = lastRunOf(path.relative(root, target));
+  return data;
 });
 handle('scenarios:dir', () => repoPath('scenarios'));
 // 채점 조건 확정 — 사람이 조건을 보고 맞다고 한 지점만 실행에서 채점에 쓴다

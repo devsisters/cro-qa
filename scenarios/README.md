@@ -40,8 +40,7 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
  ],
  "notes": [
   {"at": "2026-11-09", "by": "담당자", "text": "교정·유의사항 — 사람이 말한 그대로"}
- ],
- "lastRun": {"at": "2026-11-09T16:45:00", "platform": "aos", "verdict": "PASS", "run": "kit/runs/…"}
+ ]
 }
 ```
 
@@ -58,7 +57,7 @@ QA 테스트 시트의 TC 하나를 자동으로 돌리는 방법이다. 파일�
   - 조건으로 옮길 수 없는 것(연출·그림이 맞는지)은 `human: true` + `humanNote` 로 둔다. 조건이 통과해도 HUMAN 으로 남겨 사람이 캡처를 본다.
   - `values` 는 사람이 말한 숫자·값이다(예: 골드 = 100). 조건의 `text` 로도 들어간다.
   - `case.steps` 에 같은 이름의 `checkpoint` 단계가 있어야 다음 실행에서 채점된다.
-- `lastRun` 은 `scenario_run.py` 가 돌린 뒤 적는다(지점별 판정·실행 캡처 경로).
+- 마지막 실행 결과는 시나리오 파일에 넣지 않는다. 실행 폴더(`kit/runs/`)처럼 각자 컴퓨터에만 둔다 — `scenario_run.py` 가 `kit/workspace/scenario-runs/<탭>/<키>.json` 에 적고, 앱의 채점표가 그것을 「마지막 결과」로 보여 준다. 그래서 돌릴 때마다 시나리오 파일이 바뀌지 않고, 다른 사람의 결과가 섞이지 않는다.
 
 「여기 캡처해」 — 기기가 그 화면에 와 있을 때:
 
@@ -80,4 +79,4 @@ python3 tools/scenario_run.py ../scenarios/<탭>/<키>.json --check            #
 python3 tools/scenario_run.py ../scenarios/<탭>/<키>.json --platform aos      # 한 플랫폼에서
 ```
 
-결과는 `kit/runs/scenario-<플랫폼>-<시각>/` 에 남는다. 돌린 뒤 `lastRun` 을 고친다.
+결과(리포트·캡처)는 `kit/runs/scenario-<플랫폼>-<시각>/` 에 남는다. 리포트는 공유하지 않는다 — 남에게 보여 줄 때는 앱의 「Finder 에서 보기」로 폴더를 열어 전달한다.

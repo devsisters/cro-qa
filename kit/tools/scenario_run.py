@@ -6,7 +6,8 @@
 
 시나리오의 case(단계)를 케이스 하나로, 여러 파일이면 한 묶음으로 모아 임시 묶음 파일(runs/_scenario-suite.json)을 만든다.
 케이스 id 는 TC 키다. checkpoint 의 정답(채점표)은 scenarios/<탭>/<키>/<플랫폼>/ 에서 찾는다(tools/scenario_capture.py 가 만든다).
-돌린 뒤 각 시나리오 파일의 lastRun 에 결과(판정·지점별 판정·실행 폴더)를 적는다.
+돌린 뒤 마지막 결과(판정·지점별 판정·실행 폴더)를 이 컴퓨터에만 적는다 — workspace/scenario-runs/<탭>/<키>.json.
+실행 폴더(runs/)는 공유하지 않으므로 마지막 결과도 시나리오 파일(공유)에 넣지 않는다.
 --check 는 형식만 검사한다. exit 는 case_runner 와 같다(0 통과 · 1 FAIL/REVIEW · 2 형식 오류 · 3 ERROR).
 """
 import argparse
@@ -200,8 +201,18 @@ def write_report(files, platform, out):
         f.write('\n'.join(L) + '\n')
 
 
-def record_last_run(files, platform, out):
-    """실행 결과를 시나리오 파일의 lastRun 에 적는다(앱의 채점표에 마지막 결과로 나온다)."""
+LAST_RUNS = os.path.join(qc.WORKSPACE, 'scenario-runs')
+
+
+def last_run_path(scenario_path, root=None):
+    """시나리오 파일의 마지막 결과를 두는 곳(이 컴퓨터에만) — <root>/<탭 폴더>/<키>.json"""
+    tab = os.path.basename(os.path.dirname(os.path.abspath(scenario_path)))
+    return os.path.join(root or LAST_RUNS, tab, os.path.basename(scenario_path))
+
+
+def record_last_run(files, platform, out, root=None):
+    """실행 결과를 이 컴퓨터의 마지막 결과 파일에 적는다(앱의 채점표에 마지막 결과로 나온다).
+    시나리오 파일은 공유되므로 건드리지 않는다. 예전 방식으로 시나리오 파일에 남은 lastRun 은 지운다."""
     results = os.path.join(out, 'results.json')
     if not os.path.exists(results):
         return
@@ -211,7 +222,7 @@ def record_last_run(files, platform, out):
         c = by_id.get(data.get('key') or os.path.splitext(os.path.basename(path))[0])
         if not c:
             continue
-        data['lastRun'] = {
+        last = {
             'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'platform': platform, 'verdict': c.get('verdict'),
             'reason': c.get('reason', ''), 'run': os.path.relpath(out, qc.KIT),
             'checkpoints': {cp['name']: {'verdict': cp.get('verdict'), 'shot': os.path.relpath(cp['shot'], qc.KIT) if cp.get('shot') else None,
@@ -222,9 +233,16 @@ def record_last_run(files, platform, out):
                          'shot': os.path.relpath(x['shot'], qc.KIT) if x.get('shot') else None, 'detail': x.get('detail', '')}
                         for x in c.get('actions', [])],
             'error': (c.get('error') or {}).get('detail', '')}
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
+        target = last_run_path(path, root)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, 'w', encoding='utf-8') as f:
+            json.dump(last, f, ensure_ascii=False, indent=1)
             f.write('\n')
+        if 'lastRun' in data:
+            data.pop('lastRun')
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=1)
+                f.write('\n')
 
 
 if __name__ == '__main__':
