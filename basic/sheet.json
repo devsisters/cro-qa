@@ -8,7 +8,8 @@
  "captureFolderId": "1CtRU5dPiLPjexO65h6M-9ThmtREqTpWo",
  "captureFolderNote": "결과 칸 캡처를 올리는 Drive 폴더(시트와 같은 공유 드라이브의 「캡쳐」). 그 아래에 버전 탭마다 같은 이름의 폴더를 두고 그 탭 캡처를 넣는다 — 만든 폴더 id 는 captureFolders 에 적는다",
  "captureFolders": {
-  "시험": "1K7DCE5BHWtqQ8saYZZdlKKvK6wKA0b2b"
+  "시험": "1K7DCE5BHWtqQ8saYZZdlKKvK6wKA0b2b",
+  "14.50": "1vZl9ObTmGUF0t4PtGnmLRmOLhDwgj0tW"
  },
  "splitBySub": [
   "모드리스트"
