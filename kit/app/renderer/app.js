@@ -1024,7 +1024,7 @@ $('#ogSheetFile').addEventListener('click', () => sheetLoad('file'));
 // ---------- 기본 기능 — 고정 시트(CRO_버젼별 기본기능)의 TC 탭 ----------
 // TC 는 저장소 사본(basic/tc.json)에서 바로 보여 주고, 「시트에서 다시 읽기」로 고친다.
 // 시나리오는 대분류 하나(모드리스트는 중분류 하나)에 하나 — basic/scenarios/…json. 안이 TC 구간으로 나뉘고 판정은 TC 별로 나온다.
-// 버전을 넣고 체크한 시나리오를 돌리면 runs/basic-<버전>-… 에 남고, 리포트의 「시트에 결과 쓰기」로 시트의 <버전> 탭에 쓴다
+// 버전을 넣고 체크한 시나리오를 돌리면 runs/basic-<버전>-… 에 남고, 함께 시작한 기기가 모두 끝나면 Claude 탭에서 시트의 <버전> 탭에 바로 쓴다
 const bs = { data: null, sel: null };   // sel: { kind: 'scen'|'tc', key }
 const BS_CLASS = { 화면: 'c-screen', 상태: 'c-state', 시간: 'c-time', 플레이: 'c-play', 수동: 'c-manual' };
 const bsTcs = () => Object.fromEntries((((bs.data || {}).tc || {}).tcs || []).map((t) => [t.id, t]));
@@ -1281,6 +1281,8 @@ $('#runStart').addEventListener('click', async () => {
     if (!state.bsSelected.size) { alert('기본 기능 탭에서 실행할 시나리오를 하나 이상 체크한다'); return; }
     if (!($('#bsVersion').value.trim() || lsGet('qa.bsVersion'))) { alert('기본 기능 탭에 버전을 넣는다(예: 14.50)'); return; }
   } else if (!state.ogSelected.size) { alert('아웃게임 탭에서 실행할 시나리오를 하나 이상 체크한다'); return; }
+  // 기본 기능은 함께 시작한 기기가 모두 끝나면 결과를 시트의 <버전> 탭에 바로 쓰기 시작한다(run:exit)
+  state.bsBatch = kind === 'basic' ? { version: $('#bsVersion').value.trim() || lsGet('qa.bsVersion'), waiting: new Set(platforms), runs: [] } : null;
   for (const platform of platforms) {
     $(`#log-${platform}`).textContent = '';
     runPanelStart(platform);
@@ -1299,6 +1301,7 @@ $('#runStart').addEventListener('click', async () => {
       clearInterval(runTimers[platform]);
       setRunState(platform, '시작 실패', 'bad');
       $(`#now-${platform}`).textContent = e.message;
+      if (state.bsBatch) state.bsBatch.waiting.delete(platform);
     }
   }
 });
@@ -1335,7 +1338,36 @@ qa.on('run:exit', async ({ platform, code, runName }) => {
   btn.hidden = !runName;
   btn.onclick = () => { activateTab('reports'); openRun(runName); };
   logLine(platform, `■ 끝남 exit ${code}${runName ? ` → 리포트 ${runName}` : ''}`, code === 0 ? 'v-PASS' : 'v-ERROR');
+  const batch = state.bsBatch;
+  if (!batch || !batch.waiting.has(platform)) return;
+  batch.waiting.delete(platform);
+  if (runName && runName.startsWith('basic-')) batch.runs.push(runName);
+  if (batch.waiting.size) {
+    $(`#now-${platform}`).textContent = `끝났습니다 — 다른 기기가 끝나면 시트 「${batch.version}」 탭에 함께 씁니다`;
+    return;
+  }
+  state.bsBatch = null;
+  if (!batch.runs.length) return;
+  const sent = writeBasicSheet(batch.version, batch.runs);
+  for (const p of ['ios', 'aos']) {
+    if (!batch.runs.some((n) => n.includes(`-${p}-`))) continue;
+    $(`#now-${p}`).textContent = sent
+      ? `끝났습니다 — 시트 「${batch.version}」 탭에 결과를 쓰는 중입니다(Claude 탭)`
+      : '끝났습니다 — Claude 대화가 진행 중이라 시트 쓰기를 시작하지 못했습니다. 리포트의 「시트에 결과 쓰기」를 누릅니다';
+  }
 });
+
+// 기본 기능 결과 → 시트의 <버전> 탭. 쓰기는 Claude 가 Google Sheets·Drive 연결로 한다(앱은 시트 계정을 다루지 않는다).
+// 새 대화를 열고 바로 보낸다. 다른 대화가 진행 중이면 끊지 않고 false 를 돌려준다
+function writeBasicSheet(version, runNames) {
+  if (!$('#chatStop').hidden) return false;
+  const prompt = `기본 기능 결과를 시트에 써줘. 버전 「${version}」 탭이다.\n실행 폴더: ${runNames.map((n) => `runs/${n}`).join(', ')}\n\nbasic/README.md 「결과 쓰기」 절차대로 한다 — 탭이 없으면 만들고, A열로 행을 찾아 담당자 칸과 실행한 플랫폼의 판정·근거·결과 칸만 쓴다(결과 칸의 캡처는 Drive 의 버전 폴더를 먼저 찾아 거기에 올려 링크로). 사람이 적은 결과는 덮어쓰지 않는다. 다 쓰면 몇 개를 썼는지와 건너뛴 것을 알려줘.`;
+  activateTab('chat');
+  $('#chatNew').click();
+  $('#chatInput').value = prompt;
+  $('#chatSend').click();
+  return true;
+}
 
 // ---------- 리포트 ----------
 function runTitle(name) {
@@ -1431,20 +1463,15 @@ qa.on('runs:deleted', async (name) => {
   await loadRuns();
 });
 $('#repRefresh').addEventListener('click', loadRuns);
-// 기본 기능 결과 → 시트의 <버전> 탭. 쓰기는 Claude 가 Google Sheets 연결로 한다(앱은 시트 계정을 다루지 않는다).
-// 같은 버전의 다른 플랫폼 실행이 있으면 함께 쓴다
+// 기본 기능 결과를 시트에 다시 쓰기(실행이 끝날 때 자동으로 쓰지 못했거나 다시 쓸 때)
 $('#repSheet').addEventListener('click', async () => {
   const name = state.repName;
   const m = /^basic-(.+)-(ios|aos)-(\d{8}-\d{6})$/.exec(name || '');
   if (!m) return;
+  // 같은 버전의 다른 플랫폼 실행이 있으면 함께 쓴다(가장 최근 것)
   const runs = await qa.runsList().catch(() => []);
   const other = runs.map((r) => r.name).find((n) => n !== name && n.startsWith(`basic-${m[1]}-${m[2] === 'ios' ? 'aos' : 'ios'}-`));
-  const list = [name, other].filter(Boolean);
-  const prompt = `기본 기능 결과를 시트에 써줘. 버전 「${m[1]}」 탭이다.\n실행 폴더: ${list.map((n) => `runs/${n}`).join(', ')}\n\nbasic/README.md 「결과 쓰기」 절차대로 한다 — 탭이 없으면 만들고, A열로 행을 찾아 담당자 칸과 실행한 플랫폼의 판정·근거·결과 칸만 쓴다(결과 칸의 캡처는 Drive 에 올려 링크로). 사람이 적은 결과는 덮어쓰지 않는다. 다 쓰면 몇 개를 썼는지와 건너뛴 것을 알려줘.`;
-  activateTab('chat');
-  $('#chatNew').click();
-  $('#chatInput').value = prompt;
-  $('#chatInput').focus();
+  if (!writeBasicSheet(m[1], [name, other].filter(Boolean))) toast($('#repStatus'), 'Claude 대화가 진행 중이다 — 끝난 뒤 다시 누른다', true);
 });
 $('#repGoRun').addEventListener('click', () => activateTab('run'));
 
