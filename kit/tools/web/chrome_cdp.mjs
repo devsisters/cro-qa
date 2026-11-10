@@ -11,7 +11,7 @@
 //
 //   node chrome_cdp.mjs status | launch | open <url> | activate <targetId> | read <targetId> [--chars N] [--selector CSS]
 //   node chrome_cdp.mjs shot <targetId> <out.png> | close <targetId>
-//   node chrome_cdp.mjs macaron-lookup|macaron-get|macaron-replace|macaron-save|macaron-confirm …   (macaron_edit.py 가 부른다)
+//   node chrome_cdp.mjs macaron-api-get|macaron-lookup|macaron-get|macaron-replace|macaron-save|macaron-confirm …   (macaron_edit.py 가 부른다)
 //   node chrome_cdp.mjs page-text <url> [--wait ms]   새 탭으로 열어 본문을 읽고 닫는다(타임머신 응답 읽기용)
 import { execFileSync, spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -42,9 +42,12 @@ async function session(target) {
   ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   // 탭이 뒤에 있거나 큰 문서를 다루면 응답이 오지 않을 때가 있다 — 90초 넘으면 실패로 끝낸다(멈춰 있지 않게)
+  // 응답이 오면 타이머를 지운다 — 남겨 두면 결과를 낸 뒤에도 node 가 그 시간(90초)만큼 끝나지 않는다
   const send = (method, params = {}) => new Promise((r, j) => {
-    const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params }));
-    setTimeout(() => { if (pend.has(i)) { pend.delete(i); j(new Error(`CDP 응답 없음(90초): ${method}`)); } }, Number(process.env.QA_CDP_TIMEOUT_MS || 90000));
+    const i = ++id;
+    const timer = setTimeout(() => { if (pend.has(i)) { pend.delete(i); j(new Error(`CDP 응답 없음(90초): ${method}`)); } }, Number(process.env.QA_CDP_TIMEOUT_MS || 90000));
+    pend.set(i, d => { clearTimeout(timer); r(d); });
+    ws.send(JSON.stringify({ id: i, method, params }));
   });
   return { send, close: () => ws.close() };
 }
@@ -130,6 +133,34 @@ try {
     const r2 = await s.send('Runtime.evaluate', { returnByValue: true, expression:
       `(() => { const v = (window.editor && window.editor.getValue) ? window.editor.getValue() : (window.ace ? ace.edit('editor').getValue() : ''); return { bucket: ${JSON.stringify(bucket)}, key: ${JSON.stringify(key)}, length: v.length, value: v.slice(0, ${chars}) }; })()` });
     s.close(); out(r2.result?.result?.value ?? r2.result);
+  } else if (cmd === 'macaron-api-get') {
+    // 읽기 전용: 편집기를 거치지 않고 마카롱 페이지가 쓰는 조회 API(/api/couchbase_modifier/get/)로 문서를 받는다.
+    // 편집기는 8.4MB 를 들여쓰기해 올리느라 수십 초가 걸리지만 API 는 1초 안이다. 탭은 같은 dev 마카롱의 아무 페이지면 된다.
+    // 받은 document(압축 JSON 글자)만 파일로 남긴다. 쿠키·토큰은 읽지 않는다(GET 이라 필요 없다).
+    const target = args[0]; const bucket = opt('--bucket'), key = opt('--key'), outFile = opt('--out');
+    if (!target || !bucket || !key || !outFile) throw new Error('macaron-api-get <targetId> --bucket B --key K --out FILE');
+    const s = await session(target);
+    const expr = `(async () => {
+      if (!/^macaron\\.gb-[a-z0-9-]+\\.stove\\.devspie\\.com$/.test(location.host)) return {wait: true, href: location.href};
+      const r = await fetch('/api/couchbase_modifier/get/?bucket=' + encodeURIComponent(${JSON.stringify(bucket)}) + '&key=' + encodeURIComponent(${JSON.stringify(key)}),
+                            {redirect: 'manual'});
+      if (r.status !== 200) return {status: r.status};
+      const d = await r.json();
+      return {status: 200, bucket: d.bucket, key: d.key, type: d.type, document: d.document}; })()`;
+    let v = {};
+    for (let i = 0; i < 20; i++) {   // 막 연 탭은 아직 about:blank 일 수 있다 — 마카롱 주소가 될 때까지 0.5초씩
+      v = (await s.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value || {};
+      if (!v.wait) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    s.close();
+    if (v.wait) { out({ ok: false, error: 'dev 마카롱(gb-*) 탭이 아니다', href: v.href }); process.exit(6); }
+    if (v.status !== 200 || typeof v.document !== 'string') {
+      out({ ok: false, status: v.status, error: [401, 403, 0].includes(v.status) || (v.status >= 300 && v.status < 400) ? '마카롱 로그인이 필요하다 — 키트 Chrome 에서 로그인한다' : '조회 실패' });
+      process.exit(5);
+    }
+    writeFileSync(outFile, v.document);
+    out({ ok: true, bucket: v.bucket, key: v.key, type: v.type, length: v.document.length, saved: outFile });
   } else if (cmd === 'macaron-get') {
     // 읽기 전용: 이미 조회된 탭(…/couchbase_modifier/?bucket=&key=)의 편집기 전체 내용과 키를 파일로 남긴다.
     const [target, outFile] = args;

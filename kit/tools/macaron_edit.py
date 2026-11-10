@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """마카롱 couchbase 문서의 필드 하나를 바꾼다 — 테스트 계정 상태 만들기용(2026-11-03 사용자 승인).
 
+  python3 macaron_edit.py peek <path> --target <키트 Chrome targetId> --key member:<MID>   # 편집기 없이 조회 API 로 1초 안에 본다
   python3 macaron_edit.py get <path> --target <키트 Chrome targetId> [--out-dir DIR]
   python3 macaron_edit.py set <path> <new JSON value> --target <키트 Chrome targetId> --key member:<MID>
                           [--expect <old JSON value>] [--out-dir DIR]
@@ -262,9 +263,42 @@ def structural(a):
     return code
 
 
+def peek(a):
+    """읽기 전용: 편집기 없이 조회 API 로 문서를 받아 path 값을 본다. 탭은 같은 dev 마카롱의 아무 페이지면 된다.
+    path 의 @키=값(배열 항목)도 푼다. 없으면 exists=false. 백업 파일은 남기지 않는다(쓰지 않으므로)."""
+    if not a.key:
+        print('peek 에는 --key 가 필요하다', file=sys.stderr)
+        return 2
+    os.makedirs(a.out_dir, exist_ok=True)
+    tmp = os.path.join(a.out_dir, f'peek-{os.getpid()}-{time.time_ns()}.json')
+    try:
+        code, data, err = aside('macaron-api-get', a.target, '--bucket', a.bucket, '--key', a.key, '--out', tmp)
+        if code:
+            print(json.dumps({'ok': False, 'stage': 'api-get', 'exit': code, 'result': data, 'err': err}, ensure_ascii=False))
+            return 3
+        doc = json.loads(open(tmp, encoding='utf-8').read())
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    try:
+        path = resolve(doc, a.path.split('.'))
+        value = get_in(doc, path)
+    except KeyError as e:
+        if ': 0개' in str(e) or not str(e).startswith("'@"):
+            print(json.dumps({'ok': True, 'key': a.key, 'path': a.path, 'exists': False, 'note': str(e)}, ensure_ascii=False))
+            return 0
+        print(json.dumps({'ok': False, 'error': f'경로를 찾지 못했다: {e}'}, ensure_ascii=False))
+        return 2
+    except (IndexError, ValueError, TypeError) as e:
+        print(json.dumps({'ok': True, 'key': a.key, 'path': a.path, 'exists': False, 'note': str(e)}, ensure_ascii=False))
+        return 0
+    print(json.dumps({'ok': True, 'key': a.key, 'path': '.'.join(path), 'exists': True, 'value': value}, ensure_ascii=False))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('cmd', choices=['get', 'set', 'remove', 'insert'])
+    ap.add_argument('cmd', choices=['peek', 'get', 'set', 'remove', 'insert'])
     ap.add_argument('path')
     ap.add_argument('value', nargs='?')
     ap.add_argument('--target', required=True)
@@ -273,7 +307,10 @@ def main():
     ap.add_argument('--out-dir', default=os.path.join(os.getcwd(), 'macaron-backup'))
     ap.add_argument('--saved', help='insert: remove 가 남긴 항목 파일(.removed.json)')
     ap.add_argument('--max-refs', type=int, help='remove: 항목 id 가 문서 전체에 이보다 많이 나오면(장착 등에서 참조) 빼지 않는다')
+    ap.add_argument('--bucket', default='gb-member', help='peek: 조회 API 의 버킷')
     a = ap.parse_args()
+    if a.cmd == 'peek':
+        return peek(a)
     if a.cmd in ('remove', 'insert'):
         return structural(a)
     path = a.path.split('.')

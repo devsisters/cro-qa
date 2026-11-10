@@ -59,12 +59,13 @@ def _open(env, mid):
     # 뒤에 있는 탭은 브라우저가 스크립트를 늦춰 큰 문서가 편집기에 올라오지 않는다. 앞으로 가져온다
     port = os.environ.get('QA_CDP_PORT', '9444')
     urllib.request.urlopen(f'http://127.0.0.1:{port}/json/activate/{data["targetId"]}', timeout=5).read()
-    time.sleep(8)
+    time.sleep(2)   # 편집기에 문서가 올라올 때까지는 macaron_edit 의 fetch 가 다시 읽으며 기다린다
     return data['targetId']
 
 
 LOCK_FILE = os.path.join(os.path.dirname(TOOLS), 'workspace', 'macaron.lock')
-LOCK_WAIT = 600   # 초 — 마카롱 단계 하나는 계정 문서가 크면 1~2분(8.4MB 문서를 편집기에 올리는 데 91초, 2026-11-10 측정)
+LOCK_WAIT = 600   # 초 — 편집기로 저장하는 마카롱 단계 하나는 10~20초(8.4MB 문서를 편집기에 올리는 데 약 11초, 2026-11-10 측정).
+#                  예전에 잰 91초는 chrome_cdp.mjs 가 응답 뒤에도 90초 타이머를 남겨 node 가 늦게 끝난 것이었다(고침)
 
 
 @contextlib.contextmanager
@@ -87,7 +88,7 @@ def _session(env, mid):
                 if time.time() > deadline:
                     raise FlowFailure('BRIDGE', 'macaron lock', f'{LOCK_WAIT}초 동안 다른 실행이 마카롱을 놓지 않았다 — 멈춘 실행이 있는지 본다')
                 time.sleep(1)
-        print('마카롱 차례 — 계정 문서를 여는 중(큰 문서는 1~2분)', flush=True)
+        print('마카롱 차례 — 계정 문서를 편집기로 여는 중(큰 문서는 10~20초)', flush=True)
         try:
             target = _open(env, mid)
             try:
@@ -97,6 +98,21 @@ def _session(env, mid):
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
             print('마카롱 끝 — 다음 기기 차례', flush=True)
+
+
+def peek(env, mid, path, out_dir):
+    """편집기를 열지 않고 조회 API 로 path 값을 본다(1~2초) → {'exists': bool, 'value': …}.
+    탭은 문서 없는 마카롱 페이지라 앞으로 가져올 필요도, 다른 기기를 기다릴 필요도 없다(잠금 없음)."""
+    code, data = _run(['node', ASIDE, 'open', f'https://macaron.{env}.stove.devspie.com/couchbase_modifier/'])
+    if code or 'targetId' not in data:
+        raise FlowFailure('BRIDGE', 'macaron open', f'키트 Chrome 탭을 열지 못했다: {data}')
+    try:
+        code, res = _run(['python3', EDIT, 'peek', path, '--target', data['targetId'], '--key', f'member:{mid}', '--out-dir', out_dir])
+    finally:
+        _run(['node', ASIDE, 'close', data['targetId']])
+    if code or not res.get('ok'):
+        raise FlowFailure('BRIDGE', f'macaron peek {path}', json.dumps(res, ensure_ascii=False)[:300])
+    return res
 
 
 def set_field(env, mid, path, value, out_dir, expect=None):
@@ -111,10 +127,9 @@ def set_field(env, mid, path, value, out_dir, expect=None):
 
 
 def get_field(env, mid, path, out_dir):
-    with _session(env, mid) as target:
-        code, data = _run(['python3', EDIT, 'get', path, '--target', target, '--out-dir', out_dir])
-    if code or not data.get('ok'):
-        raise FlowFailure('BRIDGE', f'macaron get {path}', json.dumps(data, ensure_ascii=False)[:300])
+    data = peek(env, mid, path, out_dir)
+    if not data.get('exists'):
+        raise FlowFailure('BRIDGE', f'macaron get {path}', f'문서에 없는 경로다: {data.get("note")}')
     return data['value']
 
 
@@ -130,7 +145,10 @@ def field(env, mid, path, value, out_dir):
 
 
 def remove_item(env, mid, path, out_dir, max_refs=None):
-    """배열 항목을 뺀다(예: inventory.pets.@id=201800). 되돌리기 정보(saved 파일·실제 경로)를 돌려준다."""
+    """배열 항목을 뺀다(예: inventory.pets.@id=201800). 되돌리기 정보(saved 파일·실제 경로)를 돌려준다.
+    먼저 조회 API 로 본다 — 이미 없으면 편집기를 열지 않는다(상태는 되돌리지 않는 것이 기본이라 두 번째 실행부터 거의 이렇다)."""
+    if not peek(env, mid, path, out_dir).get('exists'):
+        return {'ok': True, 'already': True, 'path': path, 'note': '이미 없는 항목(조회 API 로 확인)'}
     with _session(env, mid) as target:
         code, data = _run(['python3', EDIT, 'remove', path, '--target', target, '--key', f'member:{mid}', '--out-dir', out_dir]
                           + (['--max-refs', str(max_refs)] if max_refs else []))

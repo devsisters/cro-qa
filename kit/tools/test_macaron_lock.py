@@ -19,7 +19,7 @@ def fake_open(env, mid):
 states._open = fake_open
 states._run = lambda cmd: (0, {'ok': True, 'value': 1})
 t0 = time.time()
-states.get_field('qa', 'mid', 'x', '/tmp')
+states.set_field('qa', 'mid', 'x', 1, '/tmp')   # 편집기로 저장하는 단계만 잠금을 잡는다(읽기는 조회 API 라 잠그지 않는다)
 print(json.dumps({'start': t0, 'end': time.time()}))
 '''
 
@@ -35,6 +35,31 @@ class MacaronLockTest(unittest.TestCase):
             first, second = sorted(spans, key=lambda s: s['end'])
             self.assertGreaterEqual(second['end'] - first['end'], 0.55, '두 번째 실행은 첫 번째가 탭을 닫은 뒤에 탭을 연다')
             self.assertTrue(any('기다린다' in o for o in outs), '기다리는 쪽은 그 사실을 로그에 남긴다')
+
+
+class PeekFirstTest(unittest.TestCase):
+    def test_remove_already_missing_does_not_open_editor(self):
+        sys.path.insert(0, os.path.join(HERE, 'device_flows'))
+        import states
+        calls = []
+
+        def fake_run(cmd):
+            calls.append(cmd)
+            if cmd[:3] == ['node', states.ASIDE, 'open']:
+                return 0, {'targetId': 'T'}
+            if 'peek' in cmd:
+                return 0, {'ok': True, 'exists': False}
+            return 0, {'ok': True}
+        orig = states._run, states._open
+        states._run = fake_run
+        states._open = lambda env, mid: self.fail('이미 없는 항목인데 편집기 탭을 열었다')
+        try:
+            info = states.remove_item('gb-qa-1', 'MID', 'inventory.pets.@id=1', '/tmp')
+        finally:
+            states._run, states._open = orig
+        self.assertTrue(info['already'])
+        self.assertTrue(any('peek' in c for c in calls))
+        self.assertIn('https://macaron.gb-qa-1.stove.devspie.com/couchbase_modifier/', [c[3] for c in calls if c[:3] == ['node', states.ASIDE, 'open']])
 
 
 if __name__ == '__main__':
