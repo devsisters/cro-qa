@@ -115,6 +115,7 @@ ERROR(진행 실패) 분류와 할 일:
 - MID 는 화면의 「MID : …」 라벨에서 읽는다(케이스 파일 `mid` 로 고정할 수도 있다)
 - 직접 확인: `python3 tools/timemachine.py get <서버>`, `python3 tools/timemachine.py set <서버> +1d --reason <케이스>`(기록은 `workspace/timemachine-log.jsonl`)
 - 마카롱 **Delete 는 누르지 않는다**. 도구도 누르지 않는다
+- 키트 Chrome 하나를 모든 기기가 같이 쓴다. 마카롱 단계는 이 컴퓨터에서 한 번에 한 실행만 들어간다(`workspace/macaron.lock` 파일 잠금) — 두 기기를 같이 돌리면 늦게 온 쪽이 「다른 기기가 마카롱을 쓰는 중」을 남기고 기다린다
 
 ### 3-2. 인게임 자동 되감기 (kind: rewind)
 

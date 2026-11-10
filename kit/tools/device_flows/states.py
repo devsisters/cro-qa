@@ -8,6 +8,7 @@
       ...   # 블록을 나오면(예외여도) 원래 값으로 되돌린다
 """
 import contextlib
+import fcntl
 import json
 import os
 import subprocess
@@ -49,26 +50,54 @@ def _open(env, mid):
     return data['targetId']
 
 
+LOCK_FILE = os.path.join(os.path.dirname(TOOLS), 'workspace', 'macaron.lock')
+LOCK_WAIT = 600   # 초 — 다른 기기의 마카롱 단계 하나는 보통 10~30초
+
+
+@contextlib.contextmanager
+def _session(env, mid):
+    """마카롱 탭 하나를 열고 닫는 동안 이 컴퓨터의 다른 실행(다른 기기)은 기다린다.
+    키트 Chrome 은 하나라 두 기기가 동시에 탭을 앞으로 가져오면 뒤로 밀린 탭이 문서를 다 받지 못해 실패한다.
+    잠금은 파일 잠금(flock)이라 실행이 죽으면 저절로 풀린다."""
+    os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
+    with open(LOCK_FILE, 'a') as lock:
+        deadline = time.time() + LOCK_WAIT
+        told = False
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not told:
+                    print('다른 기기가 마카롱을 쓰는 중 — 끝날 때까지 기다린다', flush=True)
+                    told = True
+                if time.time() > deadline:
+                    raise FlowFailure('BRIDGE', 'macaron lock', f'{LOCK_WAIT}초 동안 다른 실행이 마카롱을 놓지 않았다 — 멈춘 실행이 있는지 본다')
+                time.sleep(1)
+        try:
+            target = _open(env, mid)
+            try:
+                yield target
+            finally:
+                _run(['node', ASIDE, 'close', target])
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def set_field(env, mid, path, value, out_dir, expect=None):
-    target = _open(env, mid)
-    try:
+    with _session(env, mid) as target:
         cmd = ['python3', EDIT, 'set', path, json.dumps(value), '--target', target, '--key', f'member:{mid}', '--out-dir', out_dir]
         if expect is not None:
             cmd += ['--expect', json.dumps(expect)]
         code, data = _run(cmd)
-    finally:
-        _run(['node', ASIDE, 'close', target])
     if code or not data.get('ok'):
         raise FlowFailure('BRIDGE', f'macaron set {path}', json.dumps(data, ensure_ascii=False)[:300])
     return data
 
 
 def get_field(env, mid, path, out_dir):
-    target = _open(env, mid)
-    try:
+    with _session(env, mid) as target:
         code, data = _run(['python3', EDIT, 'get', path, '--target', target, '--out-dir', out_dir])
-    finally:
-        _run(['node', ASIDE, 'close', target])
     if code or not data.get('ok'):
         raise FlowFailure('BRIDGE', f'macaron get {path}', json.dumps(data, ensure_ascii=False)[:300])
     return data['value']
@@ -87,12 +116,9 @@ def field(env, mid, path, value, out_dir):
 
 def remove_item(env, mid, path, out_dir, max_refs=None):
     """배열 항목을 뺀다(예: inventory.pets.@id=201800). 되돌리기 정보(saved 파일·실제 경로)를 돌려준다."""
-    target = _open(env, mid)
-    try:
+    with _session(env, mid) as target:
         code, data = _run(['python3', EDIT, 'remove', path, '--target', target, '--key', f'member:{mid}', '--out-dir', out_dir]
                           + (['--max-refs', str(max_refs)] if max_refs else []))
-    finally:
-        _run(['node', ASIDE, 'close', target])
     if code or not data.get('ok'):
         raise FlowFailure('BRIDGE', f'macaron remove {path}', json.dumps(data, ensure_ascii=False)[:300])
     return data
@@ -100,12 +126,9 @@ def remove_item(env, mid, path, out_dir, max_refs=None):
 
 def insert_item(env, mid, path, saved, out_dir):
     """remove_item 이 뺀 항목을 같은 자리에 다시 넣는다."""
-    target = _open(env, mid)
-    try:
+    with _session(env, mid) as target:
         code, data = _run(['python3', EDIT, 'insert', path, '--saved', saved, '--target', target, '--key', f'member:{mid}',
                            '--out-dir', out_dir])
-    finally:
-        _run(['node', ASIDE, 'close', target])
     if code or not data.get('ok'):
         raise FlowFailure('BRIDGE', f'macaron insert {path}', json.dumps(data, ensure_ascii=False)[:300])
     return data
