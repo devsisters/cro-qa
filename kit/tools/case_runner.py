@@ -17,6 +17,7 @@ exit: 0 전부 PASS/NOT_RUN · 1 FAIL 또는 REVIEW 있음 · 2 사용법·케�
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -571,6 +572,12 @@ class Runner:
         return cp
 
 
+def server_for_preset(preset):
+    """실행 프리셋이 곧 테스트 중인 서버다 — 마카롱·타임머신 주소를 케이스 파일의 server 가 아니라 이 이름으로 만든다.
+    서버 이름 꼴(gb-…)이 아닌 프리셋이면 None(케이스 파일의 server 를 그대로 쓴다)."""
+    return preset if re.fullmatch(r'gb-[a-z0-9-]+', preset or '') else None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('suite_file')
@@ -601,6 +608,11 @@ def main():
         return 2
     if a.preset:
         suite['preset'] = a.preset
+        server = server_for_preset(a.preset)
+        if server and suite.get('server') != server:
+            if suite.get('server'):
+                print(f'마카롱·타임머신 서버를 케이스 파일의 {suite["server"]} 대신 실행 프리셋 {server} 로 쓴다', flush=True)
+            suite['server'] = server
     from flowlib import Device
     stamp = time.strftime('%Y%m%d-%H%M%S')
     name = suite.get('suite') or os.path.splitext(os.path.basename(a.suite_file))[0]

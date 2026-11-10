@@ -17,6 +17,7 @@
 exit: 0 · 2 사용법 · 4 파일을 읽지 못함
 """
 import argparse
+import glob
 import json
 import os
 import re
@@ -225,6 +226,91 @@ def upload_copy(src, dst_base):
     except (OSError, subprocess.SubprocessError):
         pass
     return src
+
+
+def shot_entries(run_dir):
+    """올릴 캡처 목록 — (실행 메타, [{tc, name, rel, path, sha256, uploaded, mime, title}]). 사본(upload/)을 만들고 drive.json 으로 올린 것을 가른다."""
+    import hashlib
+    meta = run_meta(run_dir)
+    done = (qc.load_json(os.path.join(run_dir, DRIVE_FILE)) if os.path.exists(os.path.join(run_dir, DRIVE_FILE)) else {}).get('files', {})
+    files = []
+    for tc, name, rel in shot_files(run_dir):
+        path = upload_copy(os.path.abspath(os.path.join(run_dir, rel)), os.path.join(os.path.abspath(run_dir), 'upload', rel))
+        with open(path, 'rb') as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        files.append({'tc': tc, 'name': name, 'rel': rel, 'path': path, 'sha256': digest, 'uploaded': rel in done,
+                      'mime': 'image/jpeg' if path.endswith('.jpg') else 'image/png',
+                      'title': f'{meta.get("version", "")}_{meta.get("platform", "")}_{tc}_{name}_{os.path.basename(os.path.normpath(run_dir))[-15:]}'
+                               + os.path.splitext(path)[1]})
+    return meta, files
+
+
+CAPTURE_BASE_GLOB = os.path.expanduser('~/Library/CloudStorage/GoogleDrive-*')   # Google Drive 데스크톱이 만드는 폴더(계정마다 이름이 다르다)
+DRIVE_ID_ATTR = 'com.google.drivefs.item-id#S'                                  # 동기화된 파일의 Drive id 가 든 확장 속성
+
+
+def capture_dir(info):
+    """Drive 데스크톱에 보이는 캡처 폴더 — sheet.json 의 captureDrivePath(공유 드라이브 아래 경로). 없으면 None.
+    환경변수 QA_CAPTURE_DIR 이 있으면 그 폴더를 쓴다(경로가 다른 컴퓨터용)."""
+    env = os.environ.get('QA_CAPTURE_DIR')
+    if env:
+        return env if os.path.isdir(env) else None
+    rel = info.get('captureDrivePath') or ''
+    for base in sorted(glob.glob(CAPTURE_BASE_GLOB)):
+        path = os.path.join(base, rel)
+        if rel and os.path.isdir(path):
+            return path
+    return None
+
+
+def drive_item_id(path):
+    """동기화된 파일의 Drive id — 올라가기 전에는 비어 있다."""
+    import subprocess
+    try:
+        r = subprocess.run(['xattr', '-p', DRIVE_ID_ATTR, path], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return ''
+    return r.stdout.strip() if r.returncode == 0 else ''
+
+
+def upload_run(run_dir, base_dir, id_of=drive_item_id, wait=180, interval=2):
+    """아직 안 올린 캡처를 Drive 데스크톱 폴더(base_dir/<버전>/)에 복사하고, Drive 가 올린 뒤 생기는 파일 id 를 drive.json 에 적는다.
+    같은 이름이 이미 있으면 덮어쓰지 않고 그 파일의 id 를 쓴다. 하나 끝날 때마다 저장해 중간에 끊겨도 이어간다."""
+    import shutil
+    meta, files = shot_entries(run_dir)
+    dest = os.path.join(base_dir, str(meta.get('version', '')))
+    os.makedirs(dest, exist_ok=True)
+    drive_path = os.path.join(run_dir, DRIVE_FILE)
+    drive = qc.load_json(drive_path) if os.path.exists(drive_path) else {}
+    drive.setdefault('files', {})
+    out = {'ok': True, 'run': run_dir, 'folder': dest, 'copied': 0, 'existed': 0, 'skipped': 0, 'failed': [], 'driveFile': drive_path}
+    pending = []
+    for f in files:
+        if f['uploaded']:
+            out['skipped'] += 1
+            continue
+        target = os.path.join(dest, f['title'])
+        if os.path.exists(target):
+            out['existed'] += 1
+        else:
+            shutil.copy2(f['path'], target)
+            out['copied'] += 1
+        pending.append((f, target))
+    deadline = time.time() + wait
+    while pending:
+        for item in list(pending):
+            fid = id_of(item[1])
+            if fid:
+                drive['files'][item[0]['rel']] = fid
+                pending.remove(item)
+                with open(drive_path, 'w', encoding='utf-8') as fh:
+                    json.dump(drive, fh, ensure_ascii=False, indent=1)
+        if not pending or time.time() > deadline:
+            break
+        time.sleep(interval)
+    out['failed'] = [{'rel': f['rel'], 'error': f'{wait}초 안에 Drive 가 파일 id 를 주지 않았다 — Google Drive 앱의 동기화 상태를 본다'} for f, _ in pending]
+    out['ok'] = not out['failed']
+    return out
 
 
 def shot_lines(run_dir, tc_id):
@@ -486,6 +572,8 @@ def main():
     p.add_argument('--run', required=True)
     p = sub.add_parser('shots')
     p.add_argument('--run', required=True)
+    p = sub.add_parser('upload')
+    p.add_argument('--run', required=True)
     a = ap.parse_args()
     info = sheet_info()
     try:
@@ -529,24 +617,22 @@ def main():
             plan.update({'ok': True, 'spreadsheetId': info.get('spreadsheetId'), 'tab': str(version)})
             emit(plan, a.save)
         elif a.cmd == 'shots':
-            import hashlib
-            meta = run_meta(a.run)
-            done = (qc.load_json(os.path.join(a.run, DRIVE_FILE)) if os.path.exists(os.path.join(a.run, DRIVE_FILE)) else {}).get('files', {})
-            files = []
-            for tc, name, rel in shot_files(a.run):
-                path = upload_copy(os.path.abspath(os.path.join(a.run, rel)), os.path.join(os.path.abspath(a.run), 'upload', rel))
-                with open(path, 'rb') as f:
-                    digest = hashlib.sha256(f.read()).hexdigest()
-                files.append({'tc': tc, 'name': name, 'rel': rel, 'path': path, 'sha256': digest, 'uploaded': rel in done,
-                              'mime': 'image/jpeg' if path.endswith('.jpg') else 'image/png',
-                              'title': f'{meta.get("version", "")}_{meta.get("platform", "")}_{tc}_{name}_{os.path.basename(os.path.normpath(a.run))[-15:]}'
-                                       + os.path.splitext(path)[1]})
+            meta, files = shot_entries(a.run)
             # 올릴 폴더 — 캡처 폴더 아래 버전 탭 이름의 폴더. id 를 모르면 먼저 찾고(다른 사람·다른 컴퓨터가 이미 만들었을 수 있다),
             # 없을 때만 만든다. 찾았거나 만든 id 는 sheet.json captureFolders 에 적는다
             version = str(meta.get('version', ''))
             folder = capture_folder(info, version)
             print(json.dumps({'ok': True, 'run': a.run, 'folder': folder, 'driveFile': os.path.join(a.run, DRIVE_FILE), 'files': files},
                              ensure_ascii=False, indent=1))
+        elif a.cmd == 'upload':
+            base = capture_dir(info)
+            if not base:
+                print(json.dumps({'ok': False, 'error': 'Drive 데스크톱의 캡처 폴더가 보이지 않는다 — Google Drive 앱을 설치·로그인하고 공유 드라이브 「QA」를 볼 수 있어야 한다'
+                                  f'(찾는 경로: …/{info.get("captureDrivePath", "(sheet.json 에 captureDrivePath 없음)")}). 앱의 「준비」 탭을 본다'}, ensure_ascii=False))
+                return 4
+            res = upload_run(a.run, base)
+            print(json.dumps(res, ensure_ascii=False, indent=1))
+            return 0 if res['ok'] else 3
         elif a.cmd == 'rows':
             platform, rows = result_rows(a.run)
             print(json.dumps({'platform': platform, 'version': run_meta(a.run).get('version'), 'rows': rows}, ensure_ascii=False))

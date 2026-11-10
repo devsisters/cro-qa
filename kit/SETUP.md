@@ -44,6 +44,14 @@
 
 서버 시간은 그 서버를 쓰는 모든 사람에게 바뀐다. 같이 쓰는 서버면 먼저 알린다. 슬랙 #cro_timemachine 의 `!t <서버>`(조회)·`!s <서버> 2026-11-14 00:00`(변경)과 같은 기능이다.
 
+## 5-1. Google Drive 데스크톱 — 기본 기능 결과 캡처용
+
+기본 기능 결과의 캡처는 키트가 `basic_sheet.py upload` 로 Google Drive 데스크톱의 공유 드라이브 폴더(`basic/sheet.json` 의 `captureDrivePath`)에 복사하고, Drive 가 올린 뒤 파일 id 를 읽어 시트 링크로 쓴다. 팀원 모두 필요하다.
+
+1. `brew install --cask google-drive` (맥 비밀번호가 필요할 수 있다) 또는 https://www.google.com/drive/download/
+2. 앱을 열어 회사 계정으로 로그인하고, Finder 의 「Google Drive › 공유 드라이브 › QA」 가 열리는지 확인한다(권한이 없으면 요청).
+3. `python3 tools/doctor.py` 의 「Google Drive 데스크톱」 줄이 OK 면 된다. QA 앱 「준비」 탭에도 같은 점검이 있다.
+
 ## 6. 확인
 
 ```bash

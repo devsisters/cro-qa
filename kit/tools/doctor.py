@@ -75,6 +75,11 @@ def main():
     chrome = '/Applications/Google Chrome.app'
     add('Chrome (상태·시간 케이스)', 'OK' if os.path.isdir(chrome) else 'WARN', chrome if os.path.isdir(chrome) else '없음',
         '' if os.path.isdir(chrome) else 'https://www.google.com/chrome 에서 설치 — 상태·시간 케이스에만 필요')
+    # 기본 기능 결과 캡처 — Google Drive 데스크톱의 캡쳐 폴더로 복사한다(basic_sheet.py upload). 팀원 모두 필요하다
+    import basic_sheet
+    cap = basic_sheet.capture_dir(basic_sheet.sheet_info())
+    add('Google Drive 데스크톱 (기본 기능 캡처)', 'OK' if cap else 'WARN', cap or '캡쳐 폴더가 안 보인다',
+        '' if cap else 'brew install --cask google-drive 후 앱을 열어 회사 계정으로 로그인하고, 공유 드라이브 「QA」가 Finder 에 보이는지 확인한다(INSTALL.md 2장)')
     if node and '--web' in sys.argv:
         code, out, _ = run(['python3', os.path.join(HERE, 'timemachine.py'), 'get', os.environ.get('QA_SERVER', 'gb-qa-126')], timeout=60)
         ok = code == 0

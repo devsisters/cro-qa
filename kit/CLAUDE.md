@@ -125,6 +125,8 @@ ERROR(진행 실패) 분류와 할 일:
 - 키트 Chrome(포트 9444)이 꺼져 있으면 마카롱 단계가 `fetch failed` 로 멈춘다. 실행기가 마카롱을 열기 전에 꺼져 있으면 `node tools/web/chrome_cdp.mjs launch` 로 띄운다. **새 컴퓨터는 처음 한 번 사람이 그 창에서 stove·마카롱에 로그인한다**(SETUP.md 5장, 로그인은 `workspace/chrome-profile` 에 남는다). 확인: `python3 tools/doctor.py --web`
 - 키트 Chrome 하나를 모든 기기가 같이 쓴다. 마카롱 단계는 이 컴퓨터에서 한 번에 한 실행만 들어간다(`workspace/macaron.lock` 파일 잠금) — 두 기기를 같이 돌리면 늦게 온 쪽이 「다른 기기가 마카롱을 쓰는 중」을 남기고 기다린다
 
+- **기본 기능 결과 캡처는 `python3 tools/basic_sheet.py upload --run runs/<실행>` 으로 올린다**(Google Drive 데스크톱의 캡쳐 폴더로 복사 → Drive 가 올린 파일 id 를 `drive.json` 에). Drive 연결(MCP)의 `create_file` 에 이미지를 base64 글자로 직접 써서 올리지 않는다 — 깨진 그림이 올라간다. Drive 데스크톱이 없으면 INSTALL.md 2-1 을 사람에게 안내한다
+
 ### 3-2. 인게임 자동 되감기 (kind: rewind)
 
 QA 가 앱(`app/`)을 쓰면 케이스 편집·실행·리포트는 앱이 하고, Claude 는 앱에서 요약·진단·대화로 불린다. 앱이 만든 케이스·결과 파일은 이 문서의 형식과 같다.
@@ -143,6 +145,7 @@ python3 tools/rewind_runner.py cases/<묶음>.json --platform aos     # Android
 - 판정: PASS(되감기 성공, 불일치 0) · FAIL(`rewind_fail` = 재시뮬레이션 어긋남, `state_mismatch` = 되감은 뒤 부활·보너스 횟수가 체크포인트와 다름) · ERROR(앱 종료·멈춤) · UNSURE(되감기가 한 번도 안 일어남 — 부활·보너스가 없었다)
 - 앱 로그: iOS 는 `devicectl --console` 로 받는다(실행기가 앱을 직접 띄운다). 로컬 빌드는 assert 가 SIGINT 종료라 크래시 리포트가 남지 않는다 — 로그의 「App terminated due to signal」 이 그것이다. Android 는 logcat
 - 조작 입력은 넣지 않는다. 부활·보너스 케이스는 **아무것도 안 눌러도** 장애물에 부딪혀 죽고, 보너스 아이템에 닿는 맵이어야 한다(GD 요청)
+- 케이스의 `map` 은 기기 맵 목록에 있는 이름과 글자·대소문자까지 같아야 한다. 아니면 `맵 시작 실패: unknown map` 이다 — `python3 tools/gb_device.py testmode --platform ios --device <ID> --checkout "$PWD/workspace" --json '{"op":"maps"}'` 로 목록을 보고 고른다(QA 앱 되감기 탭의 「기기에서 목록 가져오기」도 같다). `unknown cmd` 는 빌드가 오래된 것이다(INSTALL.md 9장)
 - 실행 중 다른 프로세스가 같은 기기를 조작하지 않는다. iOS 실행기를 멈추면 앱도 함께 끝난다(콘솔 연결 종료 = SIGINT)
 
 ## 4. 판정 — 세 층

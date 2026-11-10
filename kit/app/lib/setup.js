@@ -36,6 +36,8 @@ function actionTable(settings) {
     node: { label: 'Node.js 설치', kind: 'run', argv: [brew, 'install', 'node'], command: 'brew install node' },
     nodeUp: { label: 'Node.js 올리기', kind: 'run', argv: [brew, 'upgrade', 'node'], command: 'brew upgrade node' },
     chrome: { label: 'Chrome 내려받기', kind: 'open', url: 'https://www.google.com/chrome/' },
+    drive: { label: 'Google Drive 설치', kind: 'terminal', command: `${q(brew)} install --cask google-drive\n# 맥 비밀번호를 물으면 터미널에서 직접 입력한다. 설치가 끝나면 Google Drive 앱을 열어 회사 계정으로 로그인한다` },
+    driveOpen: { label: 'Google Drive 열기', kind: 'run', argv: ['open', '-a', 'Google Drive'], command: 'open -a "Google Drive"' },
     claude: { label: 'Claude Code 설치', kind: 'terminal', command: 'curl -fsSL https://claude.ai/install.sh | bash' },
     gh: { label: 'GitHub CLI 설치', kind: 'run', argv: [brew, 'install', 'gh'], command: 'brew install gh' },
     ghLogin: { label: 'GitHub 로그인', kind: 'terminal', command: 'gh auth login --hostname github.com --git-protocol https --web && gh auth setup-git\n# 화면에 나온 8자리 코드를 복사 → 브라우저에서 붙여 넣고 회사 GitHub 계정으로 승인한다' },
@@ -154,6 +156,23 @@ async function checkChrome(table) {
   };
 }
 
+/** 기본 기능 결과 캡처 — 키트가 캡처를 Google Drive 데스크톱의 캡쳐 폴더로 복사하고 Drive 가 올린다(에이전트의 Drive 연결은 파일을 올리지 못한다). 모든 팀원이 필요하다. */
+async function checkDrive(table) {
+  const app = fs.existsSync('/Applications/Google Drive.app');
+  let rel = '';
+  try { rel = JSON.parse(fs.readFileSync(path.join(kit.scenarioRoot() || '', 'basic', 'sheet.json'), 'utf8')).captureDrivePath || ''; } catch (_) { /* 시나리오 저장소가 없으면 아래에서 폴더를 못 찾는다고 안내한다 */ }
+  const root = path.join(os.homedir(), 'Library', 'CloudStorage');
+  let accounts = [];
+  try { accounts = fs.readdirSync(root).filter((n) => n.startsWith('GoogleDrive-')); } catch (_) { /* Drive 가 아직 안 떴다 */ }
+  const found = rel ? accounts.map((n) => path.join(root, n, rel)).find((p) => fs.existsSync(p)) : null;
+  const need = '기본 기능 · 결과 캡처 올리기(팀원 모두)';
+  if (found) return { id: 'drive', title: 'Google Drive 데스크톱', need, status: 'OK', detail: found, fix: '', actions: [] };
+  if (!app) return { id: 'drive', title: 'Google Drive 데스크톱', need, status: 'WARN', detail: '없음', fix: '「Google Drive 설치」 뒤 앱을 열어 회사 계정으로 로그인한다', actions: act(table, 'drive') };
+  if (!accounts.length) return { id: 'drive', title: 'Google Drive 데스크톱', need, status: 'WARN', detail: '설치됨 · 로그인 안 됨', fix: '앱을 열어 회사 계정으로 로그인한다(메뉴 막대의 Drive 아이콘)', actions: act(table, 'driveOpen') };
+  return { id: 'drive', title: 'Google Drive 데스크톱', need, status: 'WARN', detail: `캡쳐 폴더가 안 보인다 — ${rel || 'basic/sheet.json 에 captureDrivePath 없음'}`,
+    fix: '공유 드라이브 「QA」 접근 권한이 있는지, Finder 의 Google Drive › 공유 드라이브 에서 그 폴더가 열리는지 본다. 터미널 앱에 파일 접근 권한이 필요할 수 있다', actions: act(table, 'driveOpen') };
+}
+
 /** 시나리오 공유(git·GitHub) — 원격이 없을 때도 이 컴퓨터 안에서는 쓸 수 있으므로 필수는 git 하나다. */
 async function checkGit(table) {
   const out = [];
@@ -230,7 +249,7 @@ async function runChecks() {
   const table = actionTable(settings);
   const groups = await Promise.all([
     checkPython(settings, table), checkBrew(table), checkXcode(settings, table), checkAdb(table),
-    checkClaude(settings, table), checkGit(table), checkGameApps(), checkNode(table), checkChrome(table),
+    checkClaude(settings, table), checkGit(table), checkGameApps(), checkNode(table), checkChrome(table), checkDrive(table),
   ]);
   return groups.flat().map((c) => Object.assign(c, { actions: c.actions.map((a) => Object.assign({}, a, { argv: undefined })) }));
 }

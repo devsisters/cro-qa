@@ -39,6 +39,17 @@ brew install node        # node 가 없거나 22 미만일 때
 brew install --cask android-platform-tools   # adb 가 없을 때 (Android 기기를 쓸 때만)
 ```
 
+### 2-1. Google Drive 데스크톱 — 기본 기능 결과 캡처용(팀원 모두)
+
+기본 기능 결과의 캡처 사진은 키트가 Google Drive 데스크톱의 공유 드라이브 폴더로 복사해 올린다(에이전트의 Drive 연결은 파일을 올리지 못한다). 이 컴퓨터에서 처음이면 설치와 로그인이 필요하다.
+
+확인: `ls -d "/Applications/Google Drive.app"` 와 `ls ~/Library/CloudStorage` 에 `GoogleDrive-<메일>` 이 있고, `cd kit && python3 tools/doctor.py` 의 「Google Drive 데스크톱」 줄이 OK.
+
+- 없으면 설치: `brew install --cask google-drive` — 맥 비밀번호를 물으면 **사람**이 프롬프트에 `! brew install --cask google-drive` 로 실행한다.
+- **사람**: 설치한 Google Drive 앱을 열어 회사 계정으로 로그인한다. 메뉴 막대의 Drive 아이콘이 동기화 중이 아니게 되면, Finder 의 「Google Drive › 공유 드라이브 › QA」 가 열리는지 본다. 폴더가 안 보이면 공유 드라이브 「QA」 접근 권한을 요청한다.
+- 터미널에서 그 폴더를 읽을 때 `Operation timed out` 이 나면 아직 Drive 앱이 연결되지 않은 것이다(로그인·초기 동기화가 끝나길 기다린다). 계속되면 시스템 설정 › 개인정보 보호 및 보안 › 파일 및 폴더(또는 전체 디스크 접근)에서 쓰는 터미널 앱을 허용한다.
+- 캡쳐 폴더 경로는 `basic/sheet.json` 의 `captureDrivePath` 다. 계정 폴더 이름(`GoogleDrive-<메일>`)은 컴퓨터마다 달라도 키트가 찾는다. 경로가 다르게 보이는 컴퓨터는 환경변수 `QA_CAPTURE_DIR` 에 그 폴더를 준다.
+
 ## 3. GitHub 로그인
 
 확인: `gh auth status` 가 `Logged in to github.com` 을 보이고, `gh repo view devsisters/cro-qa --json name` 이 성공해야 한다.
@@ -125,6 +136,8 @@ python3 tools/doctor.py --ping; echo "exit $?"
 - `launch` 가 `Locked` 오류면 사람에게 iPad 잠금 해제를 요청한다.
 - `--ping` 의 「브리지」 줄이 FAIL 이고 ping 결과가 exit 4 면 릴리즈 빌드다 — DEBUG 빌드를 다시 받아야 한다.
 - 게임 첫 실행의 리소스 다운로드는 수십 분 걸릴 수 있다.
+- `testmode`(맵 목록·되감기) 명령에 `{"ok": false, "error": "unknown cmd"}` 가 나오면 설치된 DEBUG 빌드가 되감기(AutoRewind)를 지원하지 않는 오래된 빌드다 — 앱 담당자에게 최신 DEBUG 빌드를 받는다.
+- 앱을 새로 설치한 직후 `bridge unavailable; addresses attempted: …` 가 나오면, 기기에서 앱 아이콘으로 직접 열었기 때문이다. 브리지 환경변수는 `gb_device.py launch`(QA 앱의 실행·되감기 탭 포함)로 띄울 때만 들어간다 — launch 로 다시 띄운다.
 
 ## 10. QA 앱 띄우기
 

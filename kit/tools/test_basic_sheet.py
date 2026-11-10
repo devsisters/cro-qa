@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -168,6 +169,60 @@ class ResultCellsTest(unittest.TestCase):
 
     def test_quote_tab_with_apostrophe(self):
         self.assertEqual(basic_sheet.quote_tab("14.50 '재"), "'14.50 ''재'")
+
+
+class UploadTest(unittest.TestCase):
+    def run_with_shot(self, d):
+        out = os.path.join(d, 'basic-14.50-aos-20261110-150420')
+        shot = os.path.join(out, 'TC-028', 'aos-tabs-1.png')
+        write(shot, {'x': 1})
+        case = dict(PASS, checkpoints=[dict(PASS['checkpoints'][0], shot=shot)])
+        write(os.path.join(out, 'results.json'), {'cases': [case]})
+        write(os.path.join(out, 'basic.json'), {'version': '14.50', 'platform': 'aos', 'at': '2026-11-10T15:20:00', 'by': 'x'})
+        return out
+
+    def test_upload_copies_to_version_folder_and_records_drive_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = self.run_with_shot(d)
+            base = os.path.join(d, 'drive')
+            os.makedirs(base)
+            res = basic_sheet.upload_run(out, base, id_of=lambda path: 'ID1', wait=1, interval=0)
+            name = '14.50_aos_TC-028_tabs_20261110-150420.png'
+            self.assertEqual((res['ok'], res['copied']), (True, 1))
+            self.assertTrue(os.path.exists(os.path.join(base, '14.50', name)))
+            self.assertEqual(json.load(open(os.path.join(out, 'drive.json'), encoding='utf-8'))['files'], {'TC-028/aos-tabs-1.png': 'ID1'})
+            again = basic_sheet.upload_run(out, base, id_of=lambda path: 'ID1', wait=1, interval=0)   # 이미 올린 것은 다시 복사하지 않는다
+            self.assertEqual((again['skipped'], again['copied']), (1, 0))
+
+    def test_upload_does_not_overwrite_existing_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = self.run_with_shot(d)
+            base = os.path.join(d, 'drive')
+            name = '14.50_aos_TC-028_tabs_20261110-150420.png'
+            os.makedirs(os.path.join(base, '14.50'))
+            with open(os.path.join(base, '14.50', name), 'w') as f:
+                f.write('다른 사람이 올린 것')
+            res = basic_sheet.upload_run(out, base, id_of=lambda path: 'ID9', wait=1, interval=0)
+            self.assertEqual((res['existed'], res['copied']), (1, 0))
+            self.assertEqual(open(os.path.join(base, '14.50', name)).read(), '다른 사람이 올린 것')
+
+    def test_upload_reports_files_drive_has_not_synced(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = self.run_with_shot(d)
+            res = basic_sheet.upload_run(out, os.path.join(d, 'drive'), id_of=lambda path: '', wait=0, interval=0)
+            self.assertFalse(res['ok'])
+            self.assertEqual(res['failed'][0]['rel'], 'TC-028/aos-tabs-1.png')
+            self.assertFalse(os.path.exists(os.path.join(out, 'drive.json')))
+
+    def test_capture_dir_finds_folder_under_any_drive_account(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, 'GoogleDrive-a@x.com', '공유 드라이브', 'QA', '캡쳐'))
+            with unittest.mock.patch.object(basic_sheet, 'CAPTURE_BASE_GLOB', os.path.join(d, 'GoogleDrive-*')), \
+                    unittest.mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('QA_CAPTURE_DIR', None)
+                self.assertTrue(basic_sheet.capture_dir({'captureDrivePath': '공유 드라이브/QA/캡쳐'}).endswith('캡쳐'))
+                self.assertIsNone(basic_sheet.capture_dir({'captureDrivePath': '공유 드라이브/없음'}))
+                self.assertIsNone(basic_sheet.capture_dir({}))
 
 
 class BasicReportTest(unittest.TestCase):

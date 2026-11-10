@@ -9,6 +9,7 @@
  "sheet": "https://docs.google.com/…",   // 원본 시트 링크
  "preset": "gb-qa-126",                 // 첫 화면 「프리셋 환경설정」에서 고를 이름
  "server": "gb-qa-126",                 // 마카롱·타임머신 서버(보통 프리셋과 같다) — state·server_time 단계에 필요
+                                        // 실행할 때 `--preset`(QA 앱의 서버 프리셋)을 주면 그 이름이 server 를 덮는다 — 테스트 중인 서버의 마카롱을 연다
  "mid": "",                             // 비우면 화면의 MID 라벨에서 읽는다
  "time_ok": false,                      // 서버 시간을 바꿔도 되는 서버인지(같이 쓰는 사람과 합의)
  "sheetTab": "14.40N", "layout": {…}, "statusMap": {…},   // 결과를 원본 시트에 다시 쓸 때(sheet_import 가 layout 을 채운다)
