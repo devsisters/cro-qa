@@ -168,6 +168,10 @@ class DeviceTests(DeviceTestCase):
             (('tap', '--node', 'button', '--index', '2'), {'node': 'button', 'index': 2}),
             (('swipe', '--x1', '1', '--y1', '2', '--x2', '3', '--y2', '4', '--duration-ms', '25'),
              {'x1': 1, 'y1': 2, 'x2': 3, 'y2': 4, 'durationMs': 25}),
+            (('scroll', '--to', 'start'), {'to': 'start'}),
+            (('scroll', '--pages', '0.7', '--node', 'list'), {'pages': 0.7, 'node': 'list'}),
+            (('scroll', '--by', '-40', '--x', '1', '--y', '2'), {'by': -40, 'x': 1, 'y': 2}),
+            (('scroll',), {}),
         ]:
             with self.subTest(argv=argv), mock.patch.object(device, 'bridge_request', return_value={'ok': True}) as bridge:
                 code, _ = self.invoke(*argv)
@@ -199,11 +203,38 @@ class DeviceTests(DeviceTestCase):
         args = self.args('ping', '--platform', 'ios', '--device', 'UDID')
         with mock.patch.object(device, 'devicectl', return_value={'result': {'connectionProperties': {'tunnelIPAddress': 'fd00::1'}}}):
             self.assertEqual(device.bridge_targets(args), [('fd00::1', 17880)])
+        with mock.patch.object(device, 'devicectl') as devicectl:   # 두 번째부터는 기억한 주소 — devicectl 을 부르지 않는다
+            self.assertEqual(device.bridge_targets(args), [('fd00::1', 17880)])
+            devicectl.assert_not_called()
         with mock.patch.object(device, 'devicectl', return_value={'result': {'tunnel': {'ip': '127.0.0.2'}}}):
-            self.assertEqual(device.bridge_targets(args), [('127.0.0.2', 17880)])
+            self.assertEqual(device.bridge_targets(args, fresh=True), [('127.0.0.2', 17880)])
+        self.assertEqual(device.read_state(device.state_path(self.root, 'ios', 'UDID'))['tunnel_ips'], ['127.0.0.2'])
         args.host = '[::1]'
         with mock.patch.object(device, 'devicectl') as devicectl:
             self.assertEqual(device.bridge_targets(args), [('::1', 17880)])
+            devicectl.assert_not_called()
+
+    def test_ios_stale_cached_tunnel_rediscovers_once(self):
+        args = self.args('ping', '--platform', 'ios', '--device', 'UDID')
+        path = device.state_path(self.root, 'ios', 'UDID')
+        device.atomic_json(path, {'tunnel_ips': ['fd00::dead']})
+        sent = []
+
+        def send(_args, targets, *_rest, **_kw):
+            sent.append(targets)
+            if targets == [('fd00::dead', 17880)]:
+                raise device.DeviceError(4, 'bridge unavailable', stage='connect')
+            return {'ok': True, 'result': {}}
+        with mock.patch.object(device, '_bridge_send', side_effect=send), \
+                mock.patch.object(device, 'devicectl', return_value={'result': {'tunnelIPAddress': 'fd00::2'}}):
+            self.assertEqual(device.bridge_request(args, 'ping'), {'ok': True, 'result': {}})
+        self.assertEqual(sent, [[('fd00::dead', 17880)], [('fd00::2', 17880)]])
+        self.assertEqual(device.read_state(path)['tunnel_ips'], ['fd00::2'])
+        # 연결은 됐는데 응답이 늦은 것은 주소 문제가 아니다 — 다시 찾지 않는다
+        with mock.patch.object(device, '_bridge_send', side_effect=device.DeviceError(5, 'bridge timeout', stage='response')), \
+                mock.patch.object(device, 'devicectl') as devicectl:
+            with self.assertRaises(device.DeviceError):
+                device.bridge_request(args, 'ping')
             devicectl.assert_not_called()
 
     def test_ios_no_tunnel_reports_exit_4(self):
@@ -243,6 +274,7 @@ class DeviceTests(DeviceTestCase):
 
     def test_usage_errors_emit_one_json_line(self):
         for argv in [('os-tap', '1', '2'), ('tap', '--x', '2'), ('tap', '--node', 'button', '--y', '2'),
+                     ('scroll', '--to', 'start', '--pages', '1'), ('scroll', '--x', '1'), ('scroll', '--node', 'a', '--x', '1', '--y', '2'),
                      ('ping', '--timeout', 'nan'), ('ping', '--port', '0'), ('ping', '--platform', 'ios'),
                      ('unknown',), ('tap', '--x', 'inf', '--y', '2')]:
             with self.subTest(argv=argv):

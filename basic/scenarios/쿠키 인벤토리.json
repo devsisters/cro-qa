@@ -288,8 +288,7 @@
      }
     },
     {
-     "do": "back",
-     "after": 2
+     "do": "back"
     },
     {
      "do": "tap",
@@ -333,8 +332,7 @@
      }
     },
     {
-     "do": "back",
-     "after": 2
+     "do": "back"
     },
     {
      "do": "tap",
@@ -390,8 +388,7 @@
      }
     },
     {
-     "do": "back",
-     "after": 2
+     "do": "back"
     }
    ]
   }
@@ -419,6 +416,6 @@
   }
  ],
  "createdBy": "",
- "updatedAt": "2026-11-10T13:30:00",
+ "updatedAt": "2026-11-10T19:01:35",
  "setup": []
 }

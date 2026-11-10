@@ -32,7 +32,10 @@ SIG_AREA = 0.0025     # 이미지 면적의 0.25% 이상인 차이 덩어리만 
 MASK_PAD = 4         # 마스크 여백(게임 좌표). 실측: Android 디버그 문구 경계가 0 이면 남고 4 면 사라졌다
 # 화면을 바꾸는 단계 — 「액션마다 캡처」가 켜져 있으면 이 단계가 끝날 때마다 화면을 찍어 흐름(actions)으로 남긴다
 ACTION_STEPS = {'tap', 'tap_select', 'tap_xy', 'swipe', 'back', 'close_popup', 'route', 'scroll_find', 'state', 'server_time'}
-ACTION_SETTLE = 0.5   # 누른 뒤 화면이 바뀌는 동안 잠깐 기다렸다 찍는다
+ACTION_SETTLE = 2.0   # 액션 뒤 화면이 멈출 때까지 기다리는 최대 시간(초). 멈추면 바로 다음으로 간다
+DEBUG_OVERLAY = ('TextureCache |',)   # 디버그 빌드 화면 위 표시줄 — 메모리 숫자가 계속 바뀐다
+SETTLE_POLL = 0.25    # 화면이 멈췄는지 볼 때 트리를 다시 읽는 간격
+FIND_WAIT = 5.0       # 누를 노드가 아직 없거나 덮여 있으면(화면 전환 중) 이만큼 다시 시도한다
 SIG_CHANGED = 0.03    # 마스크 뒤 바뀐 픽셀이 3% 를 넘으면 덩어리 크기와 상관없이 REVIEW
 
 STEP_KEYS = {
@@ -42,6 +45,21 @@ STEP_KEYS = {
 }
 ROUTES = ('to_lobby', 'back_to_lobby', 'lobby_to_gacha', 'refresh_user_info')
 START = ('relaunch', 'lobby', 'here')
+
+
+def tree_signature(tree):
+    """화면이 멈췄는지 비교할 트리 요약 — 보이는 노드의 이름·글자·위치(정수로 반올림)·투명도·보임·활성.
+    이름도 글자도 없는 노드(반짝이는 카드 효과 같은 반복 장식)는 뺀다 — 그것까지 보면 그 화면은 영영 멈추지 않는다.
+    목록이 들어오는 연출은 카드 안의 이름 있는 라벨도 함께 움직이고 흐려지므로 그대로 잡힌다.
+    트리의 노드 순서는 읽을 때마다 바뀔 수 있어 순서와 상관없이 비교한다. 디버그 표시줄(텍스처 메모리)은 늘 바뀌므로 뺀다."""
+    out = []
+    for n in qc.visible(tree or {}):
+        if not (n.get('inst') or n.get('name') or n.get('text')) or str(n.get('text') or '').startswith(DEBUG_OVERLAY):
+            continue
+        r = n.get('rect') or ()
+        out.append(repr((n.get('owner'), n.get('inst'), n.get('name'), n.get('text'), tuple(round(v) for v in r),
+                         n.get('opacity'), n.get('visible'), n.get('enabled'))))
+    return tuple(sorted(out))
 
 
 def coord(v, total):
@@ -274,9 +292,12 @@ class Runner:
                 self.step(case, i, step, res)
                 if step.get('do') == 'checkpoint' and res['checkpoints']:
                     res['checkpoints'][-1]['step'] = i
-                elif step.get('do') in ACTION_STEPS and getattr(self, 'capture_actions', False) \
-                        and not any(x.get('step') == i for x in res.get('skipped', [])):   # when 으로 건너뛴 단계는 찍지 않는다
-                    self.capture_action(i, step, res, 'DONE')
+                elif step.get('do') in ACTION_STEPS and not any(x.get('step') == i for x in res.get('skipped', [])):
+                    # 화면이 멈출 때까지만 기다린다(고정 대기 없음). when 으로 건너뛴 단계는 기다리지도 찍지도 않는다
+                    if step.get('do') != 'scroll_find':
+                        self.settle(step.get('settle', ACTION_SETTLE))
+                    if getattr(self, 'capture_actions', False):
+                        self.capture_action(i, step, res, 'DONE')
         except FlowFailure as e:
             res['error'] = {'kind': e.kind, 'step': e.step, 'detail': e.detail, 'shot': self.dev.shot('failure'),
                             'shotError': getattr(self.dev, 'shot_error', None)}
@@ -323,8 +344,78 @@ class Runner:
             what = f'{s.get("x")},{s.get("y")}'
         return f'{do} {what}'.strip()
 
+    def settle(self, max_s):
+        """화면 트리(위치·글자·투명도·보임)가 연속 두 번 같을 때까지, 최대 max_s 초 기다린다. 마지막 트리를 돌려준다.
+        고정 시간을 쉬는 대신 화면이 멈추면 바로 넘어간다. 계속 움직이는 화면이면 max_s 에서 끝난다(예전 고정 대기와 같다)."""
+        end = time.time() + max(0.0, float(max_s))
+        prev = None
+        while True:
+            tree = self.dev.tree()
+            sig = tree_signature(tree)
+            if sig == prev or time.time() >= end:
+                return tree
+            prev = sig
+            time.sleep(SETTLE_POLL)
+
+    def tap_retry(self, fn, label, timeout):
+        """누를 노드가 아직 없거나(NAME_MISSING) 다른 것에 덮여 있으면(BLOCKED) — 화면 전환 중이다 — timeout 동안 다시 시도한다."""
+        from flowlib import FlowFailure
+        end = time.time() + timeout
+        while True:
+            try:
+                return fn()
+            except FlowFailure as e:
+                if e.kind not in ('NAME_MISSING', 'BLOCKED') or time.time() >= end:
+                    raise
+            time.sleep(SETTLE_POLL)
+
+    def scroll_find(self, s, label):
+        """목록에서 select 가 보이는 영역(band 높이 범위) 안에 나올 때까지 찾는다.
+        게임 브리지에 scroll 명령이 있으면 목록 처음으로 간 뒤 한 쪽씩 정확히 넘긴다(관성 없음, 끝에 닿으면 바로 실패).
+        없으면(예전 빌드) 손가락처럼 스와이프한다."""
+        from flowlib import FlowFailure
+        dev = self.dev
+        w, h = dev.visible_size()
+        lo, hi = [coord(v, h) for v in s.get('band', ['5%', '85%'])]
+        target = ['--node', s['list']] if s.get('list') else []
+
+        def hits(tree=None):
+            return [n for n in qc.select(self.nodes(tree), s['select']) if n.get('rect')]
+
+        def in_band(found):
+            return [n for n in found if lo <= n['rect'][1] <= hi]
+
+        r = dev.call('scroll', '--to', 'start', *target)
+        if r.get('ok'):
+            for _ in range(int(s.get('max', 40))):
+                found = hits(dev.tree())   # 관성 없이 옮겼다 — 트리는 바로 새 칸을 보여 준다
+                if in_band(found):
+                    self.settle(0.6)
+                    return
+                if found:
+                    # 보이긴 하는데 띠 밖(머리글 밑·아래 끝) — 띠 가운데로 정확히 옮긴다. 양수 by 는 내용을 위로 올린다
+                    n = found[0]
+                    r = dev.call('scroll', '--by', f'{(lo + hi) / 2 - (n["rect"][1] + n["rect"][3] / 2):.1f}', *target)
+                    if r.get('ok') and hits(dev.tree()):
+                        self.settle(0.6)
+                        return
+                if (r.get('result') or {}).get('atEnd'):
+                    break
+                r = dev.call('scroll', '--pages', str(s.get('page', 0.8)), *target)
+                if not r.get('ok'):
+                    raise FlowFailure('BRIDGE', label, f'scroll: {r.get("error")}')
+            raise FlowFailure('NOT_REACHED', label, f'목록 끝까지 넘겨도 {qc.describe(s["select"])} 가 나오지 않았다')
+        if 'unknown cmd' not in str(r.get('error')) and 'invalid choice' not in str(r.get('error')):
+            raise FlowFailure('BRIDGE', label, f'scroll: {r.get("error")}')
+        sw = s.get('swipe', {'x1': '55%', 'y1': '20%', 'x2': '55%', 'y2': '55%'})
+        for _ in range(int(s.get('max', 40))):
+            if in_band(hits()):
+                return
+            dev.swipe(coord(sw['x1'], w), coord(sw['y1'], h), coord(sw['x2'], w), coord(sw['y2'], h), s.get('ms', 400))
+            self.settle(1.2)   # 관성 스크롤이 멈추면 바로 다시 읽는다
+        raise FlowFailure('NOT_REACHED', label, f'목록을 넘겨도 {qc.describe(s["select"])} 가 나오지 않았다')
+
     def capture_action(self, i, s, res, verdict):
-        time.sleep(ACTION_SETTLE)
         shot = self.dev.shot(f'step{i:02d}-{s.get("do")}')
         res['actions'].append({'step': i, 'do': s.get('do'), 'label': self.action_label(s), 'verdict': verdict,
                                'scene': self.dev.scene(), 'shot': shot})
@@ -340,18 +431,21 @@ class Runner:
             # 조건이 맞지 않으면 이 단계는 건너뛴다(예: 토글이 이미 원하는 상태)
             res.setdefault('skipped', []).append({'step': i, 'label': label, 'when': s['when']})
             return
+        find_wait = float(s.get('find_wait', FIND_WAIT))
         if do == 'tap':
-            dev.tap(s['target'], label, s.get('index'))
+            self.tap_retry(lambda: dev.tap(s['target'], label, s.get('index')), label, find_wait)
         elif do == 'tap_select':
-            hit = qc.select(self.nodes(), s['select'])
-            if not hit:
-                raise FlowFailure('NAME_MISSING', label, f'{qc.describe(s["select"])} 가 트리에 없다 (scene={dev.scene()})')
-            dev.tap_node(hit[s.get('index', -1)], label)
+            def tap_hit():
+                hit = qc.select(self.nodes(), s['select'])
+                if not hit:
+                    raise FlowFailure('NAME_MISSING', label, f'{qc.describe(s["select"])} 가 트리에 없다 (scene={dev.scene()})')
+                return dev.tap_node(hit[s.get('index', -1)], label)
+            self.tap_retry(tap_hit, label, find_wait)
         elif do == 'tap_xy':
             w, h = dev.visible_size()
             dev.tap_xy(coord(s['x'], w), coord(s['y'], h), label)
         elif do == 'back':
-            dev.tap('_btnBack', label)
+            self.tap_retry(lambda: dev.tap('_btnBack', label), label, find_wait)
         elif do == 'swipe':
             w, h = dev.visible_size()
             if s.get('preset') == 'diagonal':        # 디버그 콘솔 열기
@@ -379,19 +473,7 @@ class Runner:
         elif do == 'state':
             self.change_state(s, label, res)
         elif do == 'scroll_find':
-            # 목록을 넘기며 select 가 보이는 영역 안에 나올 때까지 찾는다
-            w, h = dev.visible_size()
-            sw = s.get('swipe', {'x1': '55%', 'y1': '20%', 'x2': '55%', 'y2': '55%'})
-            lo, hi = s.get('band', ['5%', '85%'])
-            for _ in range(int(s.get('max', 40))):
-                hit = [n for n in qc.select(self.nodes(), s['select']) if n.get('rect')
-                       and coord(lo, h) <= n['rect'][1] <= coord(hi, h)]
-                if hit:
-                    break
-                dev.swipe(coord(sw['x1'], w), coord(sw['y1'], h), coord(sw['x2'], w), coord(sw['y2'], h), s.get('ms', 400))
-                time.sleep(1.2)
-            else:
-                raise FlowFailure('NOT_REACHED', label, f'목록을 넘겨도 {qc.describe(s["select"])} 가 나오지 않았다')
+            self.scroll_find(s, label)
         elif do == 'server_time':
             import timemachine
             code, info = timemachine.set_time(self.suite['server'], str(s['to']), reason=f'{self.suite_name} {case["id"]}')
@@ -413,9 +495,9 @@ class Runner:
                     res['checkpoints'].append({'name': s['name'], 'verdict': 'NOT_RUN', 'device': why, 'checks': [], 'shot': None})
                     return
                 res.setdefault('deviceChecked', []).append({'name': s['name'], 'device': why})
-            if s.get('settle', 1.0):
-                time.sleep(float(s.get('settle', 1.0)))
-            res['checkpoints'].append(self.checkpoint(case, s))
+            # settle 은 이제 「최대」 기다리는 시간이다 — 화면이 멈추면 바로 확인한다(목록 등장 연출이 끝나기를 기다린다)
+            tree = self.settle(float(s.get('settle', 1.0))) if s.get('settle', 1.0) else None
+            res['checkpoints'].append(self.checkpoint(case, s, tree))
         if s.get('after'):
             time.sleep(float(s['after']))
 
@@ -487,10 +569,10 @@ class Runner:
         except Exception:  # noqa: BLE001
             pass
 
-    def checkpoint(self, case, s):
+    def checkpoint(self, case, s, tree=None):
         dev = self.dev
         name = s['name']
-        tree = dev.tree()
+        tree = tree if tree is not None else dev.tree()
         nodes = self.nodes(tree)
         scene = dev.scene()
         geometry = dev.call('ping').get('result', {})

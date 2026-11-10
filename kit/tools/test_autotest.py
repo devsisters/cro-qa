@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -290,7 +291,9 @@ class TestRunFlow(Base):
                 return {'ok': False, 'error': 'node not found: _btnProbability'}
             return orig(*args)
         r = self.runner(call, SUITE, out)
-        res = r.run_case(SUITE['cases'][0])
+        import case_runner
+        with mock.patch.object(case_runner, 'FIND_WAIT', 0.3):   # 노드가 끝내 없으면 잠깐 다시 시도한 뒤 NAME_MISSING
+            res = r.run_case(SUITE['cases'][0])
         self.assertEqual(res['verdict'], 'ERROR')
         self.assertEqual(res['error']['kind'], 'NAME_MISSING')
 
@@ -465,3 +468,85 @@ class TestRewindRunner(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FakeList:
+    """세로 목록 40칸(칸 높이 50) 중 화면(높이 320)에 보이는 칸만 트리에 나오는 가짜 게임. offset 은 처음부터 내려온 길이."""
+
+    def __init__(self, target_index, scroll=True):
+        self.offset = 120.0      # 처음 위치가 목록 중간이어도 처음으로 돌아가 찾는다
+        self.target = target_index
+        self.scroll_ok = scroll
+        self.calls = []
+
+    def nodes(self):
+        out = []
+        for i in range(40):
+            top = 320 - (i * 50 - self.offset)          # 화면 좌표(원점 왼쪽 아래)
+            if 0 <= top - 50 and top <= 320:
+                out.append({'owner': 'Cell', 'text': '보유하지 않음' if i == self.target else f'펫 {i}', 'rect': [10, top - 50, 100, 50]})
+        return out
+
+    def __call__(self, *args):
+        cmd = args[0]
+        self.calls.append(args)
+        if cmd == 'ping':
+            return {'ok': True, 'result': {'visibleSize': [568, 320]}}
+        if cmd == 'tree':
+            return {'ok': True, 'result': {'nodes': self.nodes()}}
+        if cmd == 'scroll':
+            if not self.scroll_ok:
+                return {'ok': False, 'error': 'unknown cmd'}
+            a = dict(zip(args[1::2], args[2::2]))
+            if a.get('--to') == 'start':
+                self.offset = 0.0
+            elif '--pages' in a:
+                self.offset += float(a['--pages']) * 320
+            elif '--by' in a:
+                self.offset += float(a['--by'])
+            self.offset = max(0.0, min(self.offset, 40 * 50 - 320))
+            return {'ok': True, 'result': {'atEnd': self.offset >= 40 * 50 - 320, 'atStart': self.offset == 0}}
+        if cmd == 'swipe':
+            self.offset = max(0.0, min(self.offset + 100, 40 * 50 - 320))
+            return {'ok': True, 'result': {}}
+        return {'ok': False, 'error': f'unknown {cmd}'}
+
+
+class TestScrollFind(unittest.TestCase):
+    STEP = {'do': 'scroll_find', 'select': {'owner': 'Cell', 'text': '보유하지 않음'}, 'band': ['15%', '70%'], 'max': 45}
+
+    def run_find(self, bridge, step=None):
+        import case_runner
+        from flowlib import Device
+        r = case_runner.Runner(Device('mac', tempfile.gettempdir(), tempfile.gettempdir(), runner=bridge), {'cases': []}, 'mac',
+                               tempfile.gettempdir())
+        with mock.patch.object(case_runner, 'SETTLE_POLL', 0):
+            r.scroll_find(step or self.STEP, 'find')
+        return r
+
+    def test_bridge_scroll_finds_item_before_current_position_and_puts_it_in_band(self):
+        bridge = FakeList(target_index=1)          # 처음 위치(120)보다 위에 있다 — 스와이프로는 못 찾던 경우
+        self.run_find(bridge)
+        hit = [n for n in bridge.nodes() if n['text'] == '보유하지 않음']
+        self.assertTrue(hit)
+        self.assertFalse(any(c[0] == 'swipe' for c in bridge.calls))
+
+    def test_bridge_scroll_deep_item_without_swipes(self):
+        bridge = FakeList(target_index=33)
+        self.run_find(bridge)
+        hit = [n for n in bridge.nodes() if n['text'] == '보유하지 않음']
+        self.assertTrue(hit and 48 <= hit[0]['rect'][1] <= 224)
+        self.assertLess(sum(c[0] == 'scroll' for c in bridge.calls), 12)
+
+    def test_missing_item_fails_at_list_end_not_after_max_swipes(self):
+        from flowlib import FlowFailure
+        bridge = FakeList(target_index=99)
+        with self.assertRaises(FlowFailure) as e:
+            self.run_find(bridge)
+        self.assertEqual(e.exception.kind, 'NOT_REACHED')
+        self.assertLess(sum(c[0] == 'scroll' for c in bridge.calls), 10)
+
+    def test_old_build_without_scroll_falls_back_to_swipe(self):
+        bridge = FakeList(target_index=8, scroll=False)
+        self.run_find(bridge)
+        self.assertTrue(any(c[0] == 'swipe' for c in bridge.calls))

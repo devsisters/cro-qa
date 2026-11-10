@@ -53,12 +53,17 @@
 | `sleep` | `s` | 초 |
 | `close_popup` | `owner`?(기본: 지금 화면) | 그 팝업의 닫기 버튼(_btnClose·_btnNo·닫기·확인·오른쪽 위 작은 버튼) |
 | `route` | `name`, `args`? | 공통 경로: `to_lobby` · `back_to_lobby` · `lobby_to_gacha`(args: 탭 inst) · `refresh_user_info` |
-| `checkpoint` | `name`, `expect`?, `mask`?, `image`?(기본 true), `settle`?(기본 1초), `device`? | **판정 지점.** 트리·캡처를 남기고 expect·정답지로 판정한다. `device`: `{"aos": {"model": ["SM-S921B"], "os": ["14"]}, "ios": {"model": ["iPad7,4"], "os": [">=17"]}}` — 이 기기(모델 또는 판매명, OS 는 그 버전·`>=`·`<=`)에서 돌릴 때만 판정한다. 아니면 그 지점은 NOT_RUN 이고, 케이스는 모든 지점이 그러면 NOT_RUN · 일부만 그러면 UNSURE(Check). 실행 기기의 모델·OS 는 results.json `deviceInfo` 에 남는다 |
+| `checkpoint` | `name`, `expect`?, `mask`?, `image`?(기본 true), `settle`?(기본 1초), `device`? | **판정 지점.** 화면이 멈출 때까지(트리가 연속 두 번 같을 때까지, 최대 `settle` 초) 기다린 뒤 트리·캡처를 남기고 expect·정답지로 판정한다. `device`: `{"aos": {"model": ["SM-S921B"], "os": ["14"]}, "ios": {"model": ["iPad7,4"], "os": [">=17"]}}` — 이 기기(모델 또는 판매명, OS 는 그 버전·`>=`·`<=`)에서 돌릴 때만 판정한다. 아니면 그 지점은 NOT_RUN 이고, 케이스는 모든 지점이 그러면 NOT_RUN · 일부만 그러면 UNSURE(Check). 실행 기기의 모델·OS 는 results.json `deviceInfo` 에 남는다 |
 | `state` | `path`, `value` 또는 `op: "remove"`, `restore`?(기본 false), `refresh`?(기본 true), `max_refs`? | 마카롱으로 계정 필드를 바꾸거나(`value`) 배열 항목을 뺀다(`op: remove`, 경로에 `@id=N` 으로 항목 지정). 「유저 정보 갱신」으로 반영. 이미 그 상태면 저장하지 않는다. 되돌리지 않는 것이 기본. `max_refs`: 항목 id 가 문서에 그보다 많이 나오면(장착 등) 빼지 않는다. 파일 머리 `server` 필요 |
-| `scroll_find` | `select`, `max`?(기본 40), `band`?, `swipe`? | 목록을 넘기며 대상이 화면 안(band 높이 범위)에 나올 때까지 찾는다 |
+| `scroll_find` | `select`, `max`?(기본 40), `band`?, `list`?, `page`?(기본 0.8), `swipe`? | 목록에서 대상이 화면 안(band 높이 범위)에 나올 때까지 찾는다. 게임 브리지의 `scroll` 로 목록 처음부터 한 쪽(`page` × 보이는 높이)씩 관성 없이 넘기고, 찾으면 띠 가운데로 옮긴다. 끝에 닿으면 바로 실패한다. `list`: 이 이름의 노드가 든 목록(없으면 화면에서 가장 넓은 목록). 브리지에 `scroll` 이 없는 예전 빌드면 `swipe` 로 손가락처럼 넘긴다 |
 | `server_time` | `to`(`"+1d"`·`"+2h30m"`·`"2026-11-14 00:00"`), `relaunch`?(기본 true) | 서버 시간 변경 후 앱 재시작·로비. 파일 머리 `time_ok: true` + 실행기 `--allow-time` 일 때만 돈다 |
 
 모든 단계에 `label`(로그에 쓸 이름), `after`(단계 뒤 기다릴 초)를 붙일 수 있다. `timeout` 기본 15초.
+
+기다리기는 실행기가 한다 — 고정 시간을 쉬지 않고 화면이 멈추면 바로 다음으로 간다. 그래서 `after`·`sleep` 은 보통 필요 없다.
+- 화면을 바꾸는 단계(`tap`·`back`·`swipe`·`route`·`state` 등) 뒤에는 트리(위치·글자·투명도·보임)가 연속 두 번 같을 때까지, 최대 `settle` 초(기본 2초) 기다린다.
+- `tap`·`tap_select`·`back` 은 누를 노드가 아직 없거나 덮여 있으면(화면 전환 중) `find_wait` 초(기본 5초) 동안 다시 시도한다.
+- 「액션마다 캡처」는 사람이 흐름을 볼 때만 켠다(한 장에 1~2초). 꺼도 실패한 단계는 캡처가 남는다.
 
 `when` — 조건이 맞을 때만 그 단계를 한다(checkpoint 제외). 앱에 저장되는 토글처럼 시작 상태가 실행마다 다를 때 맞춰 놓는 데 쓴다. 건너뛴 단계는 결과의 `skipped` 에 남는다.
 `{"do": "tap", "target": "마이쿠키 앞으로 정렬", "when": {"present": "_spriteMyCookieFirst"}}` — 체크 표시가 있을 때만 눌러 끈다. `{"absent": 선택자}` 도 된다.

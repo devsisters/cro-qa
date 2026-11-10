@@ -6,6 +6,9 @@
   NOT_REACHED   기대한 화면(씬·글자)이 제한 시간 안에 나오지 않았다 → 화면이 다르거나 흐름이 바뀌었다
   BRIDGE        브리지·기기 연결 실패 → 환경 문제
 """
+import contextlib
+import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -13,6 +16,19 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GB_DEVICE = os.path.join(os.path.dirname(HERE), 'gb_device.py')
+# 짧고 자주 부르는 브리지 명령 — 프로세스를 띄우지 않고 부른다. launch·screenshot 처럼 외부 명령을 오래 기다리는 것은 따로 띄운다
+IN_PROCESS = {'ping', 'scene', 'tree', 'tap', 'swipe', 'scroll'}
+_GB_DEVICE_MOD = None
+
+
+def _gb_device():
+    global _GB_DEVICE_MOD
+    if _GB_DEVICE_MOD is None:
+        spec = importlib.util.spec_from_file_location('gb_device_inproc', GB_DEVICE)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _GB_DEVICE_MOD = mod
+    return _GB_DEVICE_MOD
 
 
 class FlowFailure(Exception):
@@ -47,6 +63,8 @@ class Device:
         self.shot_error = None
 
     def _run(self, *args):
+        if args and args[0] in IN_PROCESS:
+            return self._run_here(args)
         r = subprocess.run(['python3', GB_DEVICE, *args, *self.args, '--checkout', self.checkout],
                            capture_output=True, text=True)
         lines = r.stdout.strip().splitlines()
@@ -54,6 +72,18 @@ class Device:
             return json.loads(lines[-1]) if lines else {'ok': False, 'error': r.stderr[-300:]}
         except ValueError:
             return {'ok': False, 'error': r.stdout[-300:]}
+
+    def _run_here(self, args):
+        """브리지 명령은 이 프로세스 안에서 gb_device 를 부른다 — 명령마다 파이썬을 새로 띄우는 0.1초를 아낀다.
+        출력·종료 코드 형식은 따로 띄운 것과 같다(gb_device.main 의 마지막 JSON 줄)."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            _gb_device().main([*args, *self.args, '--checkout', self.checkout])
+        lines = out.getvalue().strip().splitlines()
+        try:
+            return json.loads(lines[-1]) if lines else {'ok': False, 'error': 'gb_device 출력 없음'}
+        except ValueError:
+            return {'ok': False, 'error': out.getvalue()[-300:]}
 
     def call(self, *args):
         return self.runner(*args)
@@ -134,7 +164,7 @@ class Device:
         return None
 
     # --- 대기 ---
-    def wait(self, predicate, timeout, step, expect, interval=1.5):
+    def wait(self, predicate, timeout, step, expect, interval=0.4):
         end = time.time() + timeout
         while time.time() < end:
             value = predicate()

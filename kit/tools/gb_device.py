@@ -37,7 +37,7 @@ STATE_ROOT = Path.home() / 'Library/Caches/gb_device/state'
 APP_PROCESSES = {}
 SECRETS = set()
 IDS = itertools.count(1)
-BRIDGE_OPS = ('ping', 'scene', 'tree', 'tap', 'swipe', 'capture', 'autorewind', 'testmode')
+BRIDGE_OPS = ('ping', 'scene', 'tree', 'tap', 'swipe', 'scroll', 'capture', 'autorewind', 'testmode')
 OPS = ('devices', 'build', 'install', 'launch', 'stop', 'screenshot',
        *BRIDGE_OPS, 'wait-scene', 'os-tap', 'logs', 'crashes')
 
@@ -115,6 +115,14 @@ def parser():
             for key in ('x1', 'y1', 'x2', 'y2'):
                 sub.add_argument('--' + key, type=finite, required=True)
             sub.add_argument('--duration-ms', type=natural, default=300)
+        if op == 'scroll':
+            # 스크롤 목록을 손가락 없이 옮긴다(관성 없음). 셋 중 하나, 없으면 지금 위치만 돌려준다
+            sub.add_argument('--to', choices=('start', 'end'))
+            sub.add_argument('--pages', type=finite, help='보이는 길이의 배수. 양수는 뒤쪽 내용(세로는 아래)')
+            sub.add_argument('--by', type=finite, help='게임 좌표 길이. 양수는 뒤쪽 내용')
+            sub.add_argument('--node', help='이 노드가 든 목록(없으면 화면에서 가장 넓은 목록)')
+            sub.add_argument('--x', type=finite)
+            sub.add_argument('--y', type=finite)
         if op == 'wait-scene':
             sub.add_argument('name')
         if op == 'os-tap':
@@ -151,6 +159,11 @@ def validate(args):
                 raise DeviceError(2, 'tap needs either --node or both --x and --y')
         elif not coordinates:
             raise DeviceError(2, 'tap needs either --node or both --x and --y')
+    if args.op == 'scroll':
+        if sum(getattr(args, key) is not None for key in ('to', 'pages', 'by')) > 1:
+            raise DeviceError(2, 'scroll takes one of --to, --pages, --by')
+        if (args.x is None) != (args.y is None) or (args.node is not None and args.x is not None):
+            raise DeviceError(2, 'scroll target is --node or both --x and --y')
     if args.op == 'crashes' and args.fetch and args.platform != 'ios':
         raise DeviceError(2, '--fetch is ios only')
     return args
@@ -347,7 +360,7 @@ def tunnel_addresses(data):
     return result
 
 
-def bridge_targets(args):
+def bridge_targets(args, fresh=False):
     if args.platform == 'mac':
         return [('127.0.0.1', args.port)]
     if args.platform == 'android':
@@ -366,14 +379,21 @@ def bridge_targets(args):
         return [('127.0.0.1', int(assigned))]
     if args.host:
         return [(args.host.strip('[]'), args.port)]
+    path = state_path(Path(args.checkout), 'ios', args.device)
+    if not fresh:
+        # devicectl 로 터널 주소를 찾는 데 명령마다 0.2~0.3초가 든다 — 지난번 주소를 먼저 쓰고, 안 닿으면 다시 찾는다
+        cached = read_state(path).get('tunnel_ips')
+        if isinstance(cached, list) and cached and all(isinstance(ip, str) for ip in cached):
+            return [(ip, args.port) for ip in cached]
     try:
         data = devicectl(Path(args.checkout), 'device', 'info', 'details', '--device', args.device)
     except DeviceError as exc:
         raise DeviceError(4, 'bridge addresses attempted: []; tunnel discovery failed: ' + str(exc)) from exc
-    targets = [(ip, args.port) for ip in tunnel_addresses(data)]
-    if not targets:
+    ips = tunnel_addresses(data)
+    if not ips:
         raise DeviceError(4, 'bridge addresses attempted: []; no tunnel IP; specify --host')
-    return targets
+    atomic_json(path, {**read_state(path), 'tunnel_ips': ips})
+    return [(ip, args.port) for ip in ips]
 
 
 def save_forward(args, port):
@@ -387,10 +407,21 @@ def bridge_request(args, command, **fields):
     if state.get('token'):
         fields['token'] = state['token']
     payload = json.dumps({'id': request_id, 'cmd': command, **fields}, allow_nan=False).encode() + b'\n'
-    targets = bridge_targets(args)
     deadline = time.monotonic() + args.timeout
+    cached = args.platform == 'ios' and not args.host
+    try:
+        return _bridge_send(args, bridge_targets(args), payload, request_id, deadline, connect_cap=3 if cached else None)
+    except DeviceError as exc:
+        if not cached or exc.code not in (4, 5) or exc.details.get('stage') != 'connect':
+            raise
+    # 기억해 둔 터널 주소에 연결하지 못했다 — 기기를 다시 꽂았거나 터널이 바뀌었다. 주소를 새로 찾는다
+    return _bridge_send(args, bridge_targets(args, fresh=True), payload, request_id, deadline)
+
+
+def _bridge_send(args, targets, payload, request_id, deadline, connect_cap=None):
     attempted = []
     timed_out = False
+    connected = False
     for host, port in targets:
         attempted.append(f'[{host}]:{port}')
         remaining = deadline - time.monotonic()
@@ -398,7 +429,8 @@ def bridge_request(args, command, **fields):
             timed_out = True
             break
         try:
-            with socket.create_connection((host, port), timeout=remaining) as sock:
+            with socket.create_connection((host, port), timeout=min(remaining, connect_cap or remaining)) as sock:
+                connected = True
                 sock.sendall(payload)
                 data = b''
                 while True:
@@ -433,7 +465,8 @@ def bridge_request(args, command, **fields):
         except OSError as exc:
             print('bridge: ' + str(exc), file=sys.stderr)
     raise DeviceError(5 if timed_out else 4,
-                      'bridge ' + ('timeout' if timed_out else 'unavailable') + '; addresses attempted: ' + ', '.join(attempted))
+                      'bridge ' + ('timeout' if timed_out else 'unavailable') + '; addresses attempted: ' + ', '.join(attempted),
+                      stage='response' if connected else 'connect')
 
 
 def default_app(root, platform):
@@ -738,6 +771,8 @@ def execute(args):
         elif op == 'swipe':
             fields = {key: getattr(args, key) for key in ('x1', 'y1', 'x2', 'y2')}
             fields['durationMs'] = args.duration_ms
+        elif op == 'scroll':
+            fields = {key: getattr(args, key) for key in ('to', 'pages', 'by', 'node', 'x', 'y') if getattr(args, key) is not None}
         elif op in ('autorewind', 'testmode'):
             try:
                 fields = json.loads(args.json)
