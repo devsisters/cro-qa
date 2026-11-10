@@ -1,0 +1,413 @@
+{
+ "area": "쿠키 인벤토리",
+ "sub": "",
+ "start": "lobby",
+ "server": "gb-qa-126",
+ "setup": [
+  {
+   "do": "state",
+   "op": "remove",
+   "path": "inventory.pets.@id=201800",
+   "max_refs": 2,
+   "label": "펫 하나를 미보유로(마카롱)"
+  }
+ ],
+ "entry": [
+  {
+   "do": "tap",
+   "target": "_btnMyCookie",
+   "label": "로비 → 쿠키"
+  },
+  {
+   "do": "wait",
+   "select": {
+    "owner": "CellCookieListTabBtn",
+    "inst": "_btnTabCookie"
+   }
+  }
+ ],
+ "segments": [
+  {
+   "tc": "TC-028",
+   "steps": [
+    {
+     "do": "checkpoint",
+     "name": "tabs",
+     "expect": {
+      "present": [
+       {
+        "owner": "CellCookieListTabBtn",
+        "text": "쿠키"
+       },
+       {
+        "owner": "CellCookieListTabBtn",
+        "text": "펫"
+       },
+       {
+        "owner": "CellCookieListTabBtn",
+        "text": "보물"
+       },
+       {
+        "owner": "CellCookieListTabBtn",
+        "text": "수호카드"
+       },
+       {
+        "owner": "CellCookieListTabBtn",
+        "text": "스킬"
+       }
+      ],
+      "tappable": [
+       "_btnTabCookie",
+       "_btnTabPet",
+       "_btnTabTreasure",
+       "_btnTabSpell",
+       "_btnTabRaidModeSkill"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "tc": "TC-029",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "_btnTabCookie",
+     "label": "쿠키 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListCard",
+      "inst": "_labelCookieName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "cookie",
+     "settle": 1.5,
+     "expect": {
+      "count": [
+       {
+        "owner": "CellCookieListCard",
+        "inst": "_labelCookieName",
+        "min": 1
+       }
+      ]
+     }
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabPet",
+     "label": "펫 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListCard",
+      "inst": "_labelPetTreasureName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "pet",
+     "settle": 1.5,
+     "expect": {
+      "count": [
+       {
+        "owner": "CellCookieListCard",
+        "inst": "_labelPetTreasureName",
+        "min": 1
+       }
+      ]
+     }
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabTreasure",
+     "label": "보물 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListCard",
+      "inst": "_labelPetTreasureName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "treasure",
+     "settle": 1.5,
+     "expect": {
+      "count": [
+       {
+        "owner": "CellCookieListCard",
+        "inst": "_labelPetTreasureName",
+        "min": 1
+       }
+      ]
+     }
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabSpell",
+     "label": "수호카드 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellEquipSpell",
+      "inst": "_labelName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "guardian-card",
+     "settle": 1.5,
+     "expect": {
+      "count": [
+       {
+        "owner": "CellEquipSpell",
+        "inst": "_labelName",
+        "min": 1
+       }
+      ]
+     }
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabRaidModeSkill",
+     "label": "스킬 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellRaidModeSkillListCard",
+      "inst": "_labelLevel"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "skill",
+     "settle": 1.5,
+     "expect": {
+      "count": [
+       {
+        "owner": "CellRaidModeSkillListCard",
+        "inst": "_labelLevel",
+        "min": 1
+       }
+      ]
+     }
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabPet",
+     "label": "펫 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListCard",
+      "inst": "_labelPetTreasureName"
+     }
+    },
+    {
+     "do": "scroll_find",
+     "select": {
+      "owner": "CellCookieListCard",
+      "text": "보유하지 않음"
+     },
+     "max": 45,
+     "band": [
+      "15%",
+      "70%"
+     ]
+    },
+    {
+     "do": "checkpoint",
+     "name": "pet-not-owned",
+     "image": false,
+     "expect": {
+      "present": [
+       {
+        "owner": "CellCookieListCard",
+        "text": "보유하지 않음"
+       },
+       {
+        "owner": "CellCookieListCard",
+        "inst": "_labelPetTreasureName"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "tc": "TC-030",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "_btnTabCookie",
+     "label": "쿠키 탭으로"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListTabBtn",
+      "inst": "_btnTabCookie"
+     }
+    },
+    {
+     "do": "tap_xy",
+     "x": "25%",
+     "y": "62%",
+     "label": "쿠키 탭 첫 카드"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "SceneCPTCookieInfo",
+      "inst": "_labelTxtCardName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "cookie-detail",
+     "expect": {
+      "present": [
+       {
+        "owner": "SceneCPTCookieInfo",
+        "inst": "_labelTxtCardName"
+       },
+       {
+        "inst": "_labelTitle",
+        "text_contains": "자세히 보기"
+       }
+      ]
+     }
+    },
+    {
+     "do": "back",
+     "after": 2
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabPet",
+     "label": "펫 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListCard",
+      "inst": "_labelPetTreasureName"
+     }
+    },
+    {
+     "do": "tap_xy",
+     "x": "25%",
+     "y": "62%",
+     "label": "펫 탭 첫 카드"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "SceneCPTCookieInfo",
+      "inst": "_labelTxtCardName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "pet-detail",
+     "expect": {
+      "present": [
+       {
+        "owner": "SceneCPTCookieInfo",
+        "inst": "_labelTxtCardName"
+       },
+       {
+        "inst": "_labelTitle",
+        "text_contains": "자세히 보기"
+       }
+      ]
+     }
+    },
+    {
+     "do": "back",
+     "after": 2
+    },
+    {
+     "do": "tap",
+     "target": "_btnTabPet",
+     "label": "펫 탭"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "CellCookieListCard",
+      "inst": "_labelPetTreasureName"
+     }
+    },
+    {
+     "do": "scroll_find",
+     "select": {
+      "owner": "CellCookieListCard",
+      "text": "보유하지 않음"
+     },
+     "max": 45,
+     "band": [
+      "15%",
+      "70%"
+     ]
+    },
+    {
+     "do": "tap",
+     "target": "보유하지 않음",
+     "label": "미보유 카드 선택"
+    },
+    {
+     "do": "wait",
+     "select": {
+      "owner": "SceneCPTCookieInfo",
+      "inst": "_labelTxtCardName"
+     }
+    },
+    {
+     "do": "checkpoint",
+     "name": "not-owned-detail",
+     "image": false,
+     "expect": {
+      "present": [
+       {
+        "owner": "SceneCPTCookieInfo",
+        "inst": "_labelTxtCardName"
+       },
+       {
+        "inst": "_labelTitle",
+        "text_contains": "자세히 보기"
+       }
+      ]
+     }
+    },
+    {
+     "do": "back",
+     "after": 2
+    }
+   ]
+  }
+ ],
+ "notes": [
+  {
+   "at": "2026-11-10",
+   "by": "이전",
+   "text": "kit/cases/cro-basic.json 의 TC-028~030 단계를 옮겼다. 마카롱 상태(펫 201800 미보유)는 시나리오 setup 으로 한 번만 한다. TC-030 앞에 쿠키 탭 누르기를 더했다(TC-029 가 펫 탭에서 끝난다) — 이 연결은 기기에서 아직 돌려 보지 않았다"
+  },
+  {
+   "at": "2026-11-10",
+   "by": "이전",
+   "text": "카드 선택은 팝업이 아니라 상세 페이지(SceneCPTCookieInfo, 「…자세히 보기」)로 이동한다"
+  }
+ ],
+ "createdBy": "",
+ "updatedAt": "2026-11-10T11:17:44"
+}

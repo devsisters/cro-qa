@@ -155,21 +155,19 @@ async function finishLoad(url, id, xlsx, title) {
   }
   return { tabs: r.tabs, tcs: r.tcs, skipped: r.skipped, title: cache.title };
 }
-handle('sheet:load', async (url) => {
-  url = String(url || '').trim();
-  const id = sheetIdOf(url);
+// 시트 xlsx 받기 — 링크 공개면 바로, 회사 계정 전용이면 평소 브라우저가 다운로드 폴더에 받게 하고 기다린다.
+// read(file, name) 로 읽은 뒤 앱이 받게 한 파일을 지운다(이미지가 든 시트는 수백 MB)
+async function withSheetXlsx(id, read) {
   const exportUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`;
   fs.mkdirSync(SHEET_CACHE, { recursive: true });
-  // 1) 링크 공개 시트면 바로 받는다
   try {
     const res = await fetch(exportUrl, { redirect: 'follow', signal: AbortSignal.timeout(120000) });
     if (res.ok && /spreadsheetml|octet-stream/.test(res.headers.get('content-type') || '')) {
       const tmp = path.join(SHEET_CACHE, `${id}.xlsx`);
       fs.writeFileSync(tmp, Buffer.from(await res.arrayBuffer()));
-      try { return await finishLoad(url, id, tmp); } finally { fs.rmSync(tmp, { force: true }); }
+      try { return await read(tmp, ''); } finally { fs.rmSync(tmp, { force: true }); }
     }
   } catch (_) { /* 회사 계정 전용 — 브라우저로 */ }
-  // 2) 평소 브라우저로 내려받는다. 시트가 크면(이미지 포함) 수백 MB 라 몇 분 걸릴 수 있다
   const downloads = app.getPath('downloads');
   const since = Date.now() - 2000;
   await shell.openExternal(exportUrl);
@@ -186,12 +184,70 @@ handle('sheet:load', async (url) => {
     if (!found) continue;
     await new Promise((r) => setTimeout(r, 1500));
     if (fs.statSync(found.full).size !== found.size) continue;
-    const result = await finishLoad(url, id, found.full, found.name.replace(/( \(\d+\))?\.xlsx$/i, ''));
-    // 앱이 받게 한 파일이다 — 읽었으면 다운로드 폴더에서 지운다(시트가 크다)
-    fs.rmSync(found.full, { force: true });
-    return result;
+    try { return await read(found.full, found.name.replace(/( \(\d+\))?\.xlsx$/i, '')); } finally { fs.rmSync(found.full, { force: true }); }
   }
-  throw new Error('10분 안에 다운로드 폴더에 xlsx 가 생기지 않았다 — 브라우저에서 회사 계정으로 로그인했는지 보고, 받은 xlsx 를 「xlsx 파일로」로 고른다');
+  throw new Error('10분 안에 다운로드 폴더에 xlsx 가 생기지 않았다 — 브라우저에서 회사 계정으로 로그인했는지 본다');
+}
+handle('sheet:load', async (url) => {
+  url = String(url || '').trim();
+  const id = sheetIdOf(url);
+  return withSheetXlsx(id, (file, title) => finishLoad(url, id, file, title));
+});
+// ---------- 기본 기능 — 고정 시트(basic/sheet.json)의 TC 탭 사본(basic/tc.json)과 자동화 단계(cases/cro-basic.json) ----------
+function runPy(args, timeout = 300000) {
+  const { execFile } = require('child_process');
+  return new Promise((resolve, reject) => {
+    execFile(kit.readSettings().python, args, { cwd: kit.P.kit, env: kit.toolEnv(), timeout, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const text = String(stdout || '');
+      let r = null;
+      try { r = text.includes('{') ? JSON.parse(text.slice(text.indexOf('{'))) : null; } catch (_) { r = null; }
+      if (!r || r.ok === false) return reject(new Error((r && r.error) || String(stderr || (err && err.message) || '응답 없음').trim().slice(-300)));
+      resolve(r);
+    });
+  });
+}
+// 시나리오 묶음 — 대분류 하나가 시나리오 하나, splitBySub 의 대분류(모드리스트)만 중분류마다 하나(tools/basic_scenario.py 와 같은 규칙)
+const safeName = (v) => String(v).replace(/[/\\:]/g, '_').trim() || '_';
+function basicGroups(tcs, split) {
+  const order = [];
+  const by = new Map();
+  for (const t of tcs) {
+    const sub = split.has(t.area) ? t.sub : '';
+    const key = `${t.area}\u001f${sub}`;
+    if (!by.has(key)) { by.set(key, { area: t.area, sub, tcs: [] }); order.push(key); }
+    by.get(key).tcs.push(t.id);
+  }
+  return order.map((k) => by.get(k));
+}
+handle('basic:read', () => {
+  const sheet = readJsonFile(repoPath('basic', 'sheet.json'), {});
+  const tc = readJsonFile(repoPath('basic', 'tc.json'), null);
+  const split = new Set(sheet.splitBySub || ['모드리스트']);
+  const root = repoPath('basic', 'scenarios');
+  const groups = basicGroups((tc && tc.tcs) || [], split).map((g) => {
+    const file = g.sub ? `${safeName(g.area)}/${safeName(g.sub)}.json` : `${safeName(g.area)}.json`;
+    const data = readJsonFile(path.join(root, file), null);
+    const segs = (data && data.segments) || [];
+    return Object.assign(g, {
+      name: g.sub ? `${g.area} › ${g.sub}` : g.area, file, exists: !!data,
+      auto: segs.filter((x) => (x.steps || []).length).map((x) => x.tc),
+      steps: Object.fromEntries(segs.map((x) => [x.tc, (x.steps || []).length])),
+      reasons: Object.fromEntries(segs.filter((x) => x.reason).map((x) => [x.tc, x.reason])),
+      notes: ((data && data.notes) || []).length, setup: ((data && data.setup) || []).length, entry: ((data && data.entry) || []).length,
+    });
+  });
+  return { sheet, tc, groups };
+});
+handle('basic:refresh', async () => {
+  const sheet = readJsonFile(repoPath('basic', 'sheet.json'), {});
+  if (!sheet.spreadsheetId) throw new Error('basic/sheet.json 에 시트가 없다');
+  const out = repoPath('basic', 'tc.json');
+  const prev = readJsonFile(out, null);
+  const r = await withSheetXlsx(sheet.spreadsheetId, (file) => runPy([path.join(kit.P.kit, 'tools', 'basic_sheet.py'), 'tc', file, '--out', out, '--url', sheet.url || '']));
+  // 문구가 그대로면 읽은 시각만 바뀐 것이다 — 공유할 변경이 생기지 않게 이전 파일로 되돌린다
+  const now = readJsonFile(out, null);
+  if (prev && now && JSON.stringify(prev.tcs) === JSON.stringify(now.tcs)) fs.writeFileSync(out, JSON.stringify(prev, null, 1) + '\n');
+  return { tcs: r.tcs, changed: !prev || !now || JSON.stringify(prev.tcs) !== JSON.stringify(now.tcs) };
 });
 handle('sheet:loadFile', async (url) => {
   const pick = await dialog.showOpenDialog(win, { title: '테스트 시트 xlsx', properties: ['openFile'], filters: [{ name: 'Excel', extensions: ['xlsx'] }] });

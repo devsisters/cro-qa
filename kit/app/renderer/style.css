@@ -384,3 +384,18 @@ table.tc tr.tc-row.sel td { background: var(--focus); }
 .attention-box h3 { margin: 4px 0 8px; }
 .attention-box tr[data-i] { cursor: pointer; }
 .chip.v-DONE { color: var(--pass); } .chip.v-FAILED { color: var(--danger); }
+
+/* 기본 기능 탭 — 자동화 구분 표시 */
+.cls { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.cls.c-screen { color: var(--pass); border-color: color-mix(in srgb, var(--pass) 45%, var(--line)); }
+.cls.c-state { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.cls.c-time { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.cls.c-play { color: var(--unsure); border-color: color-mix(in srgb, var(--unsure) 45%, var(--line)); }
+.bs-ver { display: flex; align-items: center; gap: 6px; }
+.bs-ver input { width: 7em; }
+#bsInfo { margin-top: 2px; }
+#bsTable tr.scen-row { background: color-mix(in srgb, var(--panel) 80%, var(--accent) 8%); cursor: pointer; }
+#bsTable tr.scen-row td { padding-top: 10px; padding-bottom: 10px; border-top: 2px solid var(--line); }
+#bsTable tr.scen-row.sel { background: var(--selected); }
+#bsTable td.pick { width: 28px; }
+#bsTable tr.tc-row td:first-child { width: 28px; }

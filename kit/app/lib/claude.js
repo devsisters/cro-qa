@@ -8,7 +8,10 @@ const kit = require('./kit');
 const READ_ONLY = ['Read', 'Glob', 'Grep'];
 // 대화에서는 케이스 편집과 키트 도구 실행까지 허용한다. 키트 폴더 밖 명령은 허용 목록에 없다
 const CHAT_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash(python3 tools/*)', 'Bash(git *)', 'Bash(python3 -m unittest:*)',
-  `Bash(python3 ${kit.P.kit}/tools/*)`]; // 키트 도구를 전체 경로로 불러도 같은 허용으로 본다
+  `Bash(python3 ${kit.P.kit}/tools/*)`, // 키트 도구를 전체 경로로 불러도 같은 허용으로 본다
+  // 기본 기능 결과 쓰기 — 각자의 Claude 계정에 연결된 Google Sheets 로 시트를 읽고 쓴다(basic/README.md 「결과 쓰기」)
+  'mcp__claude_ai_Google_Sheets__get_spreadsheet', 'mcp__claude_ai_Google_Sheets__get_values',
+  'mcp__claude_ai_Google_Sheets__update_values', 'mcp__claude_ai_Google_Sheets__update_spreadsheet'];
 
 /** 거절된 도구 호출 → 허용 규칙. 「이번만」은 그 명령 그대로, 「항상」은 같은 도구(예: python3 tools/x.py)의 모든 인자 */
 function ruleFor(denial, always) {
@@ -29,7 +32,7 @@ function ruleFor(denial, always) {
 function scenarioArgs() {
   const dir = kit.scenarioRoot();
   if (!dir) return [];
-  return ['--add-dir', dir, '--append-system-prompt', `이 QA 앱의 케이스는 키트 cases/ 가 아니라 시나리오 저장소 ${dir} 에 있다 — 케이스 ${dir}/cases, 아웃게임 시나리오 ${dir}/scenarios(형식은 ${dir}/scenarios/README.md, 돌리기는 키트의 tools/scenario_run.py), 문서(md) ${dir}/docs, 프리셋 ${dir}/presets. 케이스·시나리오를 만들거나 고치면 그 폴더에 쓴다. 시나리오를 고칠 때 사람이 말한 교정·유의사항은 그 파일의 notes 에 남긴다. 게임 화면 정보는 트리 전체를 읽지 말고 키트의 tools/ui_find.py(화면 요약·걸러 보기)로 필요한 부분만 본다 — 트리 전체가 토큰을 가장 많이 쓴다. 이 폴더는 팀이 공유하는 git 저장소다. 충돌 해결을 부탁받으면 양쪽 변경을 모두 살려 합치고, 합친 결과를 사용자에게 보여 준 뒤 확인을 받고 커밋·올린다. 강제 push·히스토리 재작성은 하지 않는다.`];
+  return ['--add-dir', dir, '--append-system-prompt', `이 QA 앱의 케이스는 키트 cases/ 가 아니라 시나리오 저장소 ${dir} 에 있다 — 케이스 ${dir}/cases, 아웃게임 시나리오 ${dir}/scenarios(형식은 ${dir}/scenarios/README.md, 돌리기는 키트의 tools/scenario_run.py), 문서(md) ${dir}/docs, 프리셋 ${dir}/presets, 기본 기능 시트 사본·시나리오·결과 쓰기 절차 ${dir}/basic(README.md — 시나리오는 ${dir}/basic/scenarios, 돌리기는 tools/basic_run.py). 케이스·시나리오를 만들거나 고치면 그 폴더에 쓴다. 시나리오를 고칠 때 사람이 말한 교정·유의사항은 그 파일의 notes 에 남긴다. 게임 화면 정보는 트리 전체를 읽지 말고 키트의 tools/ui_find.py(화면 요약·걸러 보기)로 필요한 부분만 본다 — 트리 전체가 토큰을 가장 많이 쓴다. 이 폴더는 팀이 공유하는 git 저장소다. 충돌 해결을 부탁받으면 양쪽 변경을 모두 살려 합치고, 합친 결과를 사용자에게 보여 준 뒤 확인을 받고 커밋·올린다. 강제 push·히스토리 재작성은 하지 않는다.`];
 }
 
 function claudeCommand() {

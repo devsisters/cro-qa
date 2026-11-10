@@ -19,6 +19,7 @@ const P = {
   rewindRunner: path.join(KIT, 'tools', 'rewind_runner.py'),
   caseRunner: path.join(KIT, 'tools', 'case_runner.py'),
   scenarioRun: path.join(KIT, 'tools', 'scenario_run.py'),
+  basicRun: path.join(KIT, 'tools', 'basic_run.py'),
 };
 
 function readJson(file, fallback) {
@@ -255,9 +256,22 @@ function recordingsDir() {
   return path.join(root || KIT, 'recordings');
 }
 
-function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase, scenarioFiles, actionCapture }, onLine, onExit) {
+function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase, scenarioFiles, actionCapture, version }, onLine, onExit) {
   const settings = readSettings();
   let file;
+  if (kind === 'basic') {
+    // 기본 기능 — 체크한 시나리오(basic/scenarios/…json)를 버전 이름과 함께 돌린다. 결과는 runs/basic-<버전>-…
+    const root = path.join(scenarioRoot() || path.dirname(KIT), 'basic', 'scenarios');
+    const files = (scenarioFiles || []).map((f) => {
+      const abs = path.resolve(root, String(f));
+      if (!abs.startsWith(root + path.sep) || !abs.endsWith('.json') || !fs.existsSync(abs)) throw new Error(`기본 기능 시나리오 파일이 없다: ${f}`);
+      return abs;
+    });
+    if (!files.length) throw new Error('기본 기능 탭에서 돌릴 시나리오를 하나 이상 체크한다');
+    const ver = String(version || '').trim();
+    if (!/^[\w.\- ]{1,40}$/.test(ver)) throw new Error('기본 기능 탭에 버전을 넣는다(예: 14.50)');
+    return spawnRunner([P.basicRun, ...files, '--platform', platform, '--version', ver], { platform, relaunch, actionCapture, settings, kind }, onLine, onExit);
+  }
   if (kind === 'rewind' && recordCase) {
     // 맵 녹화 — 지금 케이스를 사람이 한 판 플레이하도록 바꿔 임시 묶음으로 돌린다(케이스 파일은 그대로 둔다)
     const c = JSON.parse(JSON.stringify(recordCase));
@@ -277,14 +291,17 @@ function startRunner({ kind, suiteFile, platform, caseIds, relaunch, recordCase,
   } else {
     file = caseFile(suiteFile);
   }
-  const devices = readDevices();
-  const deviceId = (devices[platform] || {}).device;
   const args = kind === 'rewind'
     ? [P.rewindRunner, file, '--platform', platform]
     : Array.isArray(file) ? [P.scenarioRun, ...file, '--platform', platform] : [P.caseRunner, file, '--platform', platform];
-  if (deviceId) args.push('--device', deviceId);
   if (caseIds && caseIds.length) args.push('--case', caseIds.join(','));
   if (kind === 'rewind') args.push('--recordings', recordingsDir());
+  return spawnRunner(args, { platform, relaunch, actionCapture, settings, kind }, onLine, onExit);
+}
+
+function spawnRunner(args, { platform, relaunch, actionCapture, settings, kind }, onLine, onExit) {
+  const deviceId = (readDevices()[platform] || {}).device;
+  if (deviceId) args.push('--device', deviceId);
   if (kind !== 'rewind' && relaunch) args.push('--relaunch');
   if (kind !== 'rewind' && actionCapture === false) args.push('--no-action-capture');
   // 기기 탭에서 고른 게임 서버 프리셋 — 서버 선택 창이 뜨면 이것을 고른다(묶음에 적힌 프리셋보다 우선)

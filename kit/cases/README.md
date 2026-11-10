@@ -52,7 +52,7 @@
 | `sleep` | `s` | 초 |
 | `close_popup` | `owner`?(기본: 지금 화면) | 그 팝업의 닫기 버튼(_btnClose·_btnNo·닫기·확인·오른쪽 위 작은 버튼) |
 | `route` | `name`, `args`? | 공통 경로: `to_lobby` · `back_to_lobby` · `lobby_to_gacha`(args: 탭 inst) · `refresh_user_info` |
-| `checkpoint` | `name`, `expect`?, `mask`?, `image`?(기본 true), `settle`?(기본 1초) | **판정 지점.** 트리·캡처를 남기고 expect·정답지로 판정한다 |
+| `checkpoint` | `name`, `expect`?, `mask`?, `image`?(기본 true), `settle`?(기본 1초), `device`? | **판정 지점.** 트리·캡처를 남기고 expect·정답지로 판정한다. `device`: `{"aos": {"model": ["SM-S921B"], "os": ["14"]}, "ios": {"model": ["iPad7,4"], "os": [">=17"]}}` — 이 기기(모델 또는 판매명, OS 는 그 버전·`>=`·`<=`)에서 돌릴 때만 판정한다. 아니면 그 지점은 NOT_RUN 이고, 케이스는 모든 지점이 그러면 NOT_RUN · 일부만 그러면 UNSURE(Check). 실행 기기의 모델·OS 는 results.json `deviceInfo` 에 남는다 |
 | `state` | `path`, `value` 또는 `op: "remove"`, `restore`?(기본 false), `refresh`?(기본 true), `max_refs`? | 마카롱으로 계정 필드를 바꾸거나(`value`) 배열 항목을 뺀다(`op: remove`, 경로에 `@id=N` 으로 항목 지정). 「유저 정보 갱신」으로 반영. 이미 그 상태면 저장하지 않는다. 되돌리지 않는 것이 기본. `max_refs`: 항목 id 가 문서에 그보다 많이 나오면(장착 등) 빼지 않는다. 파일 머리 `server` 필요 |
 | `scroll_find` | `select`, `max`?(기본 40), `band`?, `swipe`? | 목록을 넘기며 대상이 화면 안(band 높이 범위)에 나올 때까지 찾는다 |
 | `server_time` | `to`(`"+1d"`·`"+2h30m"`·`"2026-11-14 00:00"`), `relaunch`?(기본 true) | 서버 시간 변경 후 앱 재시작·로비. 파일 머리 `time_ok: true` + 실행기 `--allow-time` 일 때만 돈다 |

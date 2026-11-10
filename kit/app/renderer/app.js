@@ -4,7 +4,7 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const state = { kit: '', rwFile: null, rwSuite: null, rwIndex: 0, ogFile: null, ogSuite: null, ogSelected: new Set(), presets: {}, chatSession: null, chatId: 0, repName: null };
+const state = { kit: '', rwFile: null, rwSuite: null, rwIndex: 0, ogFile: null, ogSuite: null, ogSelected: new Set(), bsSelected: new Set(), presets: {}, chatSession: null, chatId: 0, repName: null };
 
 // Electron 은 window.prompt 를 지원하지 않는다 — 화면 안 대화상자로 묻는다
 function askText(label, value) {
@@ -99,6 +99,7 @@ function activateTab(name) {
   if (name === 'run') refreshRunLabel();
   if (name === 'setup') renderUpdates();
   if (name === 'outgame') loadOutgame();
+  if (name === 'basic') loadBasic();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => activateTab(b.dataset.tab)));
 
@@ -1020,13 +1021,184 @@ async function sheetLoad(how) {
 $('#ogSheetLoad').addEventListener('click', () => sheetLoad('link'));
 $('#ogSheetFile').addEventListener('click', () => sheetLoad('file'));
 
+// ---------- 기본 기능 — 고정 시트(CRO_버젼별 기본기능)의 TC 탭 ----------
+// TC 는 저장소 사본(basic/tc.json)에서 바로 보여 주고, 「시트에서 다시 읽기」로 고친다.
+// 시나리오는 대분류 하나(모드리스트는 중분류 하나)에 하나 — basic/scenarios/…json. 안이 TC 구간으로 나뉘고 판정은 TC 별로 나온다.
+// 버전을 넣고 체크한 시나리오를 돌리면 runs/basic-<버전>-… 에 남고, 리포트의 「시트에 결과 쓰기」로 시트의 <버전> 탭에 쓴다
+const bs = { data: null, sel: null };   // sel: { kind: 'scen'|'tc', key }
+const BS_CLASS = { 화면: 'c-screen', 상태: 'c-state', 시간: 'c-time', 플레이: 'c-play', 수동: 'c-manual' };
+const bsTcs = () => Object.fromEntries((((bs.data || {}).tc || {}).tcs || []).map((t) => [t.id, t]));
+async function loadBasic() {
+  bs.data = await qa.basicRead().catch((e) => { toast($('#bsStatus'), e.message, true); return null; });
+  const d = bs.data || {};
+  const sheet = d.sheet || {};
+  $('#bsTitle').textContent = sheet.title || '기본 기능 시트';
+  $('#bsOpen').hidden = !sheet.url;
+  if (!$('#bsVersion').value) $('#bsVersion').value = lsGet('qa.bsVersion');
+  const tcs = (d.tc && d.tc.tcs) || [];
+  const groups = d.groups || [];
+  const at = d.tc && d.tc.readAt ? d.tc.readAt.slice(0, 16).replace('T', ' ') : '';
+  const autoTc = groups.reduce((n, g) => n + g.auto.length, 0);
+  $('#bsInfo').textContent = tcs.length
+    ? `TC ${tcs.length}개 · 시나리오 ${groups.length}개(만든 것 ${groups.filter((g) => g.exists).length}) · 자동화된 TC ${autoTc}개${at ? ` · 시트에서 읽은 시각 ${at}` : ''}`
+    : '아직 TC 사본이 없다 — 「시트에서 다시 읽기」를 누른다';
+  for (const f of [...state.bsSelected]) if (!groups.some((g) => g.file === f && g.auto.length)) state.bsSelected.delete(f);
+  renderBasic();
+}
+function renderBasic() {
+  const d = bs.data || {};
+  const T = bsTcs();
+  const cls = $('#bsClass').value;
+  const onlyAuto = $('#bsOnlyAuto').checked;
+  const q = $('#bsSearch').value.trim().toLowerCase();
+  const rows = [];
+  let shownTc = 0;
+  let shownScen = 0;
+  for (const g of d.groups || []) {
+    if (onlyAuto && !g.auto.length) continue;
+    const ids = g.tcs.filter((id) => {
+      const t = T[id] || {};
+      if (cls && t.class !== cls) return false;
+      return !q || `${g.name} ${t.id} ${t.sub} ${t.check} ${t.judge}`.toLowerCase().includes(q);
+    });
+    if (!ids.length) continue;
+    shownScen += 1;
+    shownTc += ids.length;
+    const pick = g.auto.length ? `<input type="checkbox" class="bs-pick" data-file="${esc(g.file)}" title="체크하면 「체크한 시나리오 실행으로」에 들어간다"${state.bsSelected.has(g.file) ? ' checked' : ''}>` : '';
+    const btn = g.exists ? `<button class="bs-make" data-file="${esc(g.file)}">고치기</button>` : `<button class="bs-make" data-file="${esc(g.file)}">만들기</button>`;
+    const sel = bs.sel && bs.sel.kind === 'scen' && bs.sel.key === g.file;
+    rows.push(`<tr class="scen-row${sel ? ' sel' : ''}" data-file="${esc(g.file)}"><td class="pick">${pick}</td><td colspan="4"><strong>${esc(g.name)}</strong> <span class="muted">TC ${g.tcs.length}개 · 자동화 ${g.auto.length}개${g.exists ? '' : ' · 시나리오 없음'}</span></td><td class="st sc">${btn}</td></tr>`);
+    for (const id of ids) {
+      const t = T[id] || {};
+      const n = g.steps[id];
+      const mark = n ? `<span class="sc-ok" title="단계 ${n}개">✓</span>` : g.reasons[id] ? `<span class="muted" title="${esc(g.reasons[id])}">제외</span>` : '<span class="muted">-</span>';
+      const tsel = bs.sel && bs.sel.kind === 'tc' && bs.sel.key === id;
+      rows.push(`<tr class="tc-row${tsel ? ' sel' : ''}" data-id="${esc(id)}" data-file="${esc(g.file)}"><td></td><td class="no">${esc(id.replace('TC-', ''))}</td><td class="st">${esc(t.priority)}</td>
+        <td class="exp">${g.sub || !t.sub ? '' : `<span class="muted">${esc(t.sub)} · </span>`}${esc(t.check)}</td><td><span class="cls ${BS_CLASS[t.class] || ''}">${esc(t.class)}</span></td><td class="st sc">${mark}</td></tr>`);
+    }
+  }
+  $('#bsTable tbody').innerHTML = rows.join('');
+  $('#bsEmpty').hidden = shownTc > 0;
+  $('#bsEmpty').textContent = !(d.tc && d.tc.tcs || []).length ? 'TC 사본이 없습니다 — 위의 「시트에서 다시 읽기」를 누른다.' : '맞는 TC 가 없습니다.';
+  $('#bsCount').textContent = `시나리오 ${shownScen}개 · TC ${shownTc}개 보임`;
+  $$('#bsTable .bs-pick').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => { if (cb.checked) state.bsSelected.add(cb.dataset.file); else state.bsSelected.delete(cb.dataset.file); paintBsPick(); });
+  });
+  $$('#bsTable tr.scen-row').forEach((tr) => tr.addEventListener('click', (e) => {
+    bs.sel = { kind: 'scen', key: tr.dataset.file };
+    paintBsSel();
+    showBasicDetail(e.target.closest('.bs-make') ? 'claude' : '');
+  }));
+  $$('#bsTable tr.tc-row').forEach((tr) => tr.addEventListener('click', () => { bs.sel = { kind: 'tc', key: tr.dataset.id, file: tr.dataset.file }; paintBsSel(); showBasicDetail(''); }));
+  paintBsPick();
+  if (bs.sel) showBasicDetail('');
+}
+function paintBsSel() {
+  $$('#bsTable tr.scen-row').forEach((x) => x.classList.toggle('sel', !!bs.sel && bs.sel.kind === 'scen' && x.dataset.file === bs.sel.key));
+  $$('#bsTable tr.tc-row').forEach((x) => x.classList.toggle('sel', !!bs.sel && bs.sel.kind === 'tc' && x.dataset.id === bs.sel.key));
+}
+function paintBsPick() {
+  const n = state.bsSelected.size;
+  $('#bsToRun').disabled = !n;
+  $('#bsToRun').textContent = n ? `체크한 시나리오 ${n}개 실행으로` : '체크한 시나리오 실행으로';
+}
+const bsGroup = (file) => ((bs.data || {}).groups || []).find((g) => g.file === file);
+const bsLines = (s) => String(s || '').split('\n').filter(Boolean);
+function showBasicDetail(action) {
+  const box = $('#bsDetail');
+  const split = $('#tab-basic .og-split');
+  const close = () => { bs.sel = null; box.hidden = true; split.classList.remove('with-detail'); paintBsSel(); };
+  const T = bsTcs();
+  const g = bs.sel && bsGroup(bs.sel.kind === 'scen' ? bs.sel.key : bs.sel.file);
+  if (!g) { close(); return; }
+  if (bs.sel.kind === 'tc') {
+    const t = T[bs.sel.key];
+    if (!t) { close(); return; }
+    const n = g.steps[t.id];
+    box.innerHTML = `<h3>${esc(t.id)} · ${esc(t.area)} › ${esc(t.sub)}</h3>
+      <div class="exp">${esc(t.check)}</div>
+      <dl><dt>중요도</dt><dd>${esc(t.priority)}</dd><dt>자동화 구분</dt><dd><span class="cls ${BS_CLASS[t.class] || ''}">${esc(t.class)}</span></dd>
+        ${t.needs ? `<dt>사전 조건</dt><dd>${esc(t.needs)}</dd>` : ''}${t.note ? `<dt>비고</dt><dd>${esc(t.note)}</dd>` : ''}
+        <dt>시나리오</dt><dd>${esc(g.name)} — ${n ? `이 TC 구간 단계 ${n}개` : g.reasons[t.id] ? `제외: ${esc(g.reasons[t.id])}` : '이 TC 구간은 아직 비어 있다'}</dd></dl>
+      <h3>판정 항목</h3><ul class="sc-checks">${bsLines(t.judge).map((l) => `<li>${esc(l)}</li>`).join('') || '<li class="muted">없음</li>'}</ul>
+      <button id="bsScen">시나리오 보기</button> <button id="bsDetailClose">닫기</button>`;
+    box.hidden = false;
+    split.classList.add('with-detail');
+    $('#bsScen').onclick = () => { bs.sel = { kind: 'scen', key: g.file }; paintBsSel(); showBasicDetail(''); };
+    $('#bsDetailClose').onclick = close;
+    return;
+  }
+  box.innerHTML = `<h3>시나리오 ${esc(g.name)}</h3>
+    <p class="muted">${g.exists ? `<code>basic/scenarios/${esc(g.file)}</code> · 진입 단계 ${g.entry}개${g.setup ? ` · 준비(마카롱 등) ${g.setup}개` : ''}${g.notes ? ` · 메모 ${g.notes}개` : ''}` : '아직 시나리오 파일이 없다'}</p>
+    <table class="grid scoring"><thead><tr><th>TC</th><th>판정 항목</th><th>구간</th></tr></thead><tbody>${g.tcs.map((id) => {
+      const t = T[id] || {};
+      const n = g.steps[id];
+      return `<tr><td><strong>${esc(id)}</strong><div><span class="cls ${BS_CLASS[t.class] || ''}">${esc(t.class)}</span></div></td><td><ul class="sc-checks">${bsLines(t.judge).map((l) => `<li>${esc(l)}</li>`).join('')}</ul></td>
+        <td>${n ? `<span class="sc-ok">✓</span> 단계 ${n}` : g.reasons[id] ? `<span class="muted">제외 — ${esc(g.reasons[id])}</span>` : '<span class="muted">비어 있음</span>'}</td></tr>`;
+    }).join('')}</tbody></table>
+    <button id="bsClaude" class="primary">${g.exists ? 'Claude 와 고치기' : 'Claude 와 만들기'}</button> <button id="bsDetailClose">닫기</button>`;
+  box.hidden = false;
+  split.classList.add('with-detail');
+  $('#bsDetailClose').onclick = close;
+  $('#bsClaude').onclick = () => askClaudeBasic(g);
+  if (action === 'claude') askClaudeBasic(g);
+}
+function askClaudeBasic(g) {
+  const T = bsTcs();
+  const list = g.tcs.map((id) => {
+    const t = T[id] || {};
+    return `- ${id} [${t.class}] ${t.check}\n${bsLines(t.judge).map((l) => `  · ${l}`).join('\n')}${t.needs ? `\n  사전 조건: ${t.needs}` : ''}${t.note ? `\n  비고: ${t.note}` : ''}`;
+  }).join('\n');
+  const file = `basic/scenarios/${g.file}`;
+  const make = g.sub ? `python3 tools/basic_scenario.py new "${g.area}" "${g.sub}"` : `python3 tools/basic_scenario.py new "${g.area}"`;
+  const prompt = g.exists
+    ? `기본 기능 시나리오 「${g.name}」를 이어서 고치자. 파일: ${file} (형식은 basic/README.md 「시나리오 파일」)\n\nTC:\n${list}\n\n파일을 먼저 읽고 지금 구간과 notes 를 확인해줘. 내가 말하는 교정·유의사항은 notes 에 남기고 반영한 뒤 한 플랫폼에서 다시 돌려(python3 tools/basic_run.py ${JSON.stringify(`../${file}`)} --platform aos --version 시험) TC 별 결과를 알려줘.\n\n`
+    : `기본 기능 시나리오 「${g.name}」를 만들어줘. 파일: ${file} (없으면 ${make} 로 빈 구간부터, 형식은 basic/README.md 「시나리오 파일」)\n\nTC:\n${list}\n\n기기에서 직접 화면을 확인하면서 이 화면까지 들어가는 entry 와 TC 구간별 단계를 만든다. 판정 항목 한 줄이 채점 지점(checkpoint) 하나다. 화면 정보로 판정할 수 없는 줄은 사람 확인으로 남기고, 자동화할 수 없는 TC(수동·다른 계정 필요 등)는 구간의 reason 에 이유를 적는다. 다 만들면 한 플랫폼에서 돌려(python3 tools/basic_run.py ${JSON.stringify(`../${file}`)} --platform aos --version 시험) TC 별 결과와 확신이 없는 부분을 알려줘.`;
+  activateTab('chat');
+  if (!g.exists || !state.chatSession) $('#chatNew').click();
+  $('#chatInput').value = prompt;
+  $('#chatInput').focus();
+}
+$('#bsClass').addEventListener('change', renderBasic);
+$('#bsOnlyAuto').addEventListener('change', renderBasic);
+$('#bsSearch').addEventListener('input', renderBasic);
+$('#bsVersion').addEventListener('change', () => { lsSet('qa.bsVersion', $('#bsVersion').value.trim()); });
+$('#bsOpen').addEventListener('click', () => { const u = ((bs.data || {}).sheet || {}).url; if (u) qa.externalOpen(u); });
+$('#bsPickAll').addEventListener('click', () => {
+  const boxes = $$('#bsTable .bs-pick');
+  const all = boxes.length && boxes.every((b) => b.checked);
+  boxes.forEach((b) => { if (all) state.bsSelected.delete(b.dataset.file); else state.bsSelected.add(b.dataset.file); });
+  renderBasic();
+});
+$('#bsToRun').addEventListener('click', () => {
+  const ver = $('#bsVersion').value.trim();
+  if (!ver) { toast($('#bsStatus'), '버전을 넣는다(예: 14.50) — 결과를 시트의 그 이름 탭에 쓴다', true); $('#bsVersion').focus(); return; }
+  lsSet('qa.bsVersion', ver);
+  $('#runKind').value = 'basic';
+  activateTab('run');
+});
+$('#bsRefresh').addEventListener('click', async () => {
+  const b = $('#bsRefresh');
+  b.disabled = true;
+  toast($('#bsStatus'), '시트를 받는 중… 브라우저가 xlsx 를 내려받는다(로그인을 물으면 회사 계정으로). 앱이 읽고 나면 그 파일을 지운다');
+  try {
+    const r = await qa.basicRefresh();
+    await loadBasic();
+    toast($('#bsStatus'), r.changed ? `TC ${r.tcs}개를 읽었다 — 시트 문구가 바뀌어 저장소 사본을 고쳤다. 준비 탭 「변경 공유」로 올리면 팀도 같은 TC 를 본다` : `TC ${r.tcs}개를 읽었다 — 바뀐 것이 없다`);
+  } catch (e) { toast($('#bsStatus'), e.message, true); }
+  b.disabled = false;
+});
+
 // ---------- 실행 ----------
 function refreshRunLabel() {
   const kind = $('#runKind').value;
-  $('#runRelaunchWrap').style.display = kind === 'outgame' ? '' : 'none';
-  $('#runActionCapWrap').style.display = kind === 'outgame' ? '' : 'none';
+  $('#runRelaunchWrap').style.display = kind !== 'rewind' ? '' : 'none';
+  $('#runActionCapWrap').style.display = kind !== 'rewind' ? '' : 'none';
+  const ver = $('#bsVersion').value.trim() || lsGet('qa.bsVersion');
   $('#runSuiteLabel').textContent = kind === 'rewind'
     ? `${(state.rwFile || '-').replace(/\.json$/, '')} · 케이스 ${((state.rwSuite || {}).cases || []).length}개`
+    : kind === 'basic' ? `기본 기능 ${ver || '(버전 없음)'} · 시나리오 ${state.bsSelected.size}개${state.bsSelected.size ? ` · ${[...state.bsSelected].slice(0, 4).map((f) => f.replace(/\.json$/, '').replace('/', ' › ')).join(', ')}${state.bsSelected.size > 4 ? ' …' : ''}` : ' — 기본 기능 탭에서 체크한다'}`
     : `아웃게임 시나리오 ${state.ogSelected.size}개${state.ogSelected.size ? ` · ${[...state.ogSelected].slice(0, 3).map((f) => f.split('/')[0]).filter((v, i, a) => a.indexOf(v) === i).join(', ')}` : ' — 아웃게임 탭에서 체크한다'}`;
   syncRunPanels();
 }
@@ -1105,6 +1277,9 @@ $('#runStart').addEventListener('click', async () => {
     const errs = caseModel.validateSuite(state.rwSuite);
     if (errs.length) { alert(`되감기 케이스에 고칠 것이 있다:\n${errs.join('\n')}`); return; }
     await qa.casesWrite(state.rwFile, state.rwSuite);
+  } else if (kind === 'basic') {
+    if (!state.bsSelected.size) { alert('기본 기능 탭에서 실행할 시나리오를 하나 이상 체크한다'); return; }
+    if (!($('#bsVersion').value.trim() || lsGet('qa.bsVersion'))) { alert('기본 기능 탭에 버전을 넣는다(예: 14.50)'); return; }
   } else if (!state.ogSelected.size) { alert('아웃게임 탭에서 실행할 시나리오를 하나 이상 체크한다'); return; }
   for (const platform of platforms) {
     $(`#log-${platform}`).textContent = '';
@@ -1113,11 +1288,12 @@ $('#runStart').addEventListener('click', async () => {
       await qa.runStart({
         kind, platform,
         suiteFile: kind === 'rewind' ? state.rwFile : null,
-        scenarioFiles: kind === 'rewind' ? [] : [...state.ogSelected],
+        scenarioFiles: kind === 'outgame' ? [...state.ogSelected] : kind === 'basic' ? [...state.bsSelected] : [],
+        version: kind === 'basic' ? ($('#bsVersion').value.trim() || lsGet('qa.bsVersion')) : '',
         relaunch: $('#runRelaunch').checked,
         actionCapture: $('#runActionCap').checked,
       });
-      logLine(platform, `▶ ${kind === 'rewind' ? `되감기 ${state.rwFile}` : `시나리오 ${state.ogSelected.size}개`} 시작`, 'muted');
+      logLine(platform, `▶ ${kind === 'rewind' ? `되감기 ${state.rwFile}` : kind === 'basic' ? `기본 기능 시나리오 ${state.bsSelected.size}개` : `시나리오 ${state.ogSelected.size}개`} 시작`, 'muted');
     } catch (e) {
       logLine(platform, e.message, 'v-ERROR');
       clearInterval(runTimers[platform]);
@@ -1166,7 +1342,8 @@ function runTitle(name) {
   // 실행 폴더 이름: <묶음>-<ios|aos>-<YYYYMMDD-HHMMSS>
   const m = /^(.*)-(ios|aos|mac)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}$/.exec(name);
   if (!m) return { title: name, sub: '' };
-  return { title: m[1] === 'scenario' ? '아웃게임 시나리오' : m[1], sub: `${{ ios: 'iOS', aos: 'Android', mac: 'macOS' }[m[2]]} · ${m[4]}/${m[5]} ${m[6]}:${m[7]}` };
+  const basic = /^basic-(.+)$/.exec(m[1]);
+  return { title: m[1] === 'scenario' ? '아웃게임 시나리오' : basic ? `기본 기능 ${basic[1]}` : m[1], sub: `${{ ios: 'iOS', aos: 'Android', mac: 'macOS' }[m[2]]} · ${m[4]}/${m[5]} ${m[6]}:${m[7]}` };
 }
 const chipOf = (v) => ({ HUMAN: 'UNSURE', DONE: 'PASS', FAILED: 'ERROR' }[v] || v);
 // 액션 캡처와 채점 지점을 실행 순서대로
@@ -1254,6 +1431,21 @@ qa.on('runs:deleted', async (name) => {
   await loadRuns();
 });
 $('#repRefresh').addEventListener('click', loadRuns);
+// 기본 기능 결과 → 시트의 <버전> 탭. 쓰기는 Claude 가 Google Sheets 연결로 한다(앱은 시트 계정을 다루지 않는다).
+// 같은 버전의 다른 플랫폼 실행이 있으면 함께 쓴다
+$('#repSheet').addEventListener('click', async () => {
+  const name = state.repName;
+  const m = /^basic-(.+)-(ios|aos)-(\d{8}-\d{6})$/.exec(name || '');
+  if (!m) return;
+  const runs = await qa.runsList().catch(() => []);
+  const other = runs.map((r) => r.name).find((n) => n !== name && n.startsWith(`basic-${m[1]}-${m[2] === 'ios' ? 'aos' : 'ios'}-`));
+  const list = [name, other].filter(Boolean);
+  const prompt = `기본 기능 결과를 시트에 써줘. 버전 「${m[1]}」 탭이다.\n실행 폴더: ${list.map((n) => `runs/${n}`).join(', ')}\n\nbasic/README.md 「결과 쓰기」 절차대로 한다 — 탭이 없으면 만들고, A열로 행을 찾아 실행한 플랫폼의 결과·근거·실행 칸만 쓴다. 사람이 적은 결과는 덮어쓰지 않는다. 다 쓰면 몇 개를 썼는지와 건너뛴 것을 알려줘.`;
+  activateTab('chat');
+  $('#chatNew').click();
+  $('#chatInput').value = prompt;
+  $('#chatInput').focus();
+});
 $('#repGoRun').addEventListener('click', () => activateTab('run'));
 
 function fileUrl(p) {
@@ -1273,7 +1465,9 @@ async function openRun(name) {
   state.repRel = run.report ? 'report.md' : '';
   $('#repPath').textContent = run.dir ? `${run.dir}/${state.repRel}`.replace(/\/$/, '') : '';
   // 아웃게임 시나리오 실행 — 판이 아니라 TC(시나리오) 단위로 그린다
-  if (run.results && (run.results.kind === 'scenario' || (run.results.cases || []).some((c) => Array.isArray(c.checkpoints)))) {
+  // 기본 기능 실행 — 시트의 버전 탭에 결과를 쓰는 버튼
+  $('#repSheet').hidden = !(run.results && run.results.kind === 'basic');
+  if (run.results && (['scenario', 'basic'].includes(run.results.kind) || (run.results.cases || []).some((c) => Array.isArray(c.checkpoints)))) {
     renderScenarioRun(run);
     return;
   }

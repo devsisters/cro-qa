@@ -1,0 +1,68 @@
+{
+ "area": "실행",
+ "sub": "",
+ "start": "relaunch",
+ "setup": [],
+ "entry": [],
+ "segments": [
+  {
+   "tc": "TC-001",
+   "steps": [],
+   "reason": "앱 밖(홈 화면 아이콘) — 따로 확인하지 않는다: 앱이 없으면 다른 TC 를 실행할 수 없으니 실행으로 대신 확인된다(담당자 판단 2026-11-10)"
+  },
+  {
+   "tc": "TC-002",
+   "steps": [
+    {
+     "do": "checkpoint",
+     "name": "lobby",
+     "label": "앱 실행 → 로비 진입",
+     "expect": {
+      "scene": "SceneNavigator",
+      "tappable": ["_btnShopGacha", "_btnPlay"]
+     },
+     "image": false
+    }
+   ]
+  },
+  {
+   "tc": "TC-003",
+   "steps": [
+    {
+     "do": "checkpoint",
+     "name": "최저사양",
+     "label": "최저사양 기기에서 실행 → 로비",
+     "device": {
+      "aos": {"model": ["SM-S921B"], "os": ["14"]},
+      "ios": {"model": ["iPad7,4"], "os": ["17.7.11"]}
+     },
+     "expect": {
+      "scene": "SceneNavigator",
+      "tappable": ["_btnShopGacha", "_btnPlay"]
+     },
+     "image": false
+    }
+   ],
+   "partial": "「최신 OS 기기에서 실행된다」 줄 — 시트 사전 조건에 최신 OS 기기가 아직 없다"
+  }
+ ],
+ "notes": [
+  {
+   "at": "2026-11-10",
+   "by": "담당자",
+   "text": "TC-001 앱 아이콘은 따로 확인하지 않는다 — 앱이 없으면 다른 TC 를 실행할 수 없으니 실행으로 대신 확인된다"
+  },
+  {
+   "at": "2026-11-10",
+   "by": "담당자",
+   "text": "TC-003 은 시트 사전 조건의 기기 정보로 실행했는지를 보고 판정한다. 판정 항목은 줄마다 따로 쓴다(최저사양 줄 · 최신 OS 줄). 조건 기기가 아닌 기기에서 돌린 줄은 판정하지 않는다"
+  },
+  {
+   "at": "2026-11-10",
+   "by": "담당자",
+   "text": "최신 OS 기기는 나중에 시트 사전 조건에 적는다 — 적히면 그 기기로 「최신 OS」 checkpoint(device 조건)를 더하고 partial 을 뺀다. 기기별로 따로 돌린 결과는 덮어쓰지 않고 줄마다 합친다"
+  }
+ ],
+ "createdBy": "",
+ "updatedAt": "2026-11-10T11:30:00"
+}

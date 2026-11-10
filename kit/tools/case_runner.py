@@ -50,7 +50,75 @@ def coord(v, total):
     return float(v)
 
 
-# --- 케이스 파일 검사 ----------------------------------------------------------
+# --- 기기 정보 · 기기 조건 ------------------------------------------------------
+def _cmd(args, timeout=20):
+    import subprocess
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip() if r.returncode == 0 else ''
+    except (OSError, subprocess.SubprocessError):
+        return ''
+
+
+def device_info(platform, device_id):
+    """실행한 기기의 모델·OS — 결과에 남기고 checkpoint 의 device 조건에 쓴다. 못 읽으면 빈 값."""
+    info = {'id': device_id or '', 'model': '', 'name': '', 'os': ''}
+    if platform == 'aos':
+        base = ['adb'] + (['-s', device_id] if device_id else []) + ['shell', 'getprop']
+        info['model'] = _cmd(base + ['ro.product.model'])
+        info['name'] = _cmd(base + ['ro.product.marketname'])
+        info['os'] = _cmd(base + ['ro.build.version.release'])
+    elif platform == 'ios' and device_id:
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'info.json')
+            _cmd(['xcrun', 'devicectl', 'device', 'info', 'details', '--device', device_id, '--json-output', path], 60)
+            try:
+                r = qc.load_json(path).get('result', {})
+            except (OSError, ValueError):
+                r = {}
+        hw, dp = r.get('hardwareProperties', {}), r.get('deviceProperties', {})
+        info['model'] = hw.get('productType', '')        # 예: iPad7,4
+        info['name'] = hw.get('marketingName', '')       # 예: iPad Pro (10.5-inch)
+        info['os'] = dp.get('osVersionNumber', '')       # 예: 17.7.11
+    return info
+
+
+def _ver(s):
+    return tuple(int(x) for x in str(s).split('.') if x.isdigit())
+
+
+def os_match(want, have):
+    """want: "14"(그 버전 — 앞자리가 같으면 된다, 17.7 ↔ 17.7.11) · ">=16" · "<=15" """
+    if not have:
+        return False
+    w = str(want).strip()
+    for op in ('>=', '<='):
+        if w.startswith(op):
+            a, b = _ver(have), _ver(w[2:])
+            return a >= b if op == '>=' else a[:len(b)] <= b
+    return _ver(have)[:len(_ver(w))] == _ver(w)
+
+
+def device_match(cond, platform, info):
+    """checkpoint 의 device 조건 → (맞는가, 설명). cond = {"aos": {"model": [...], "os": [...]}, "ios": {...}}
+    그 플랫폼 항목이 없으면 이 플랫폼에서는 확인하지 않는 줄이다."""
+    have = f'{info.get("model") or "?"}{" (" + info["name"] + ")" if info.get("name") else ""} · OS {info.get("os") or "?"}'
+    c = (cond or {}).get(platform)
+    if c is None:
+        return False, f'이 플랫폼({platform})에서 확인하지 않는 줄 — 실행 기기 {have}'
+    models = [m.lower() for m in (c.get('model') or [])]
+    if models and (info.get('model') or '').lower() not in models and (info.get('name') or '').lower() not in models:
+        return False, f'조건 기기({", ".join(c["model"])})가 아니다 — 실행 기기 {have}'
+    oses = c.get('os') or []
+    if isinstance(oses, str):
+        oses = [oses]
+    if oses and not any(os_match(w, info.get('os')) for w in oses):
+        return False, f'조건 OS({", ".join(map(str, oses))})가 아니다 — 실행 기기 {have}'
+    return True, f'조건 기기에서 실행 — {have}'
+
+
+# --- 케이스 파일 검사----------------------------------------------------------
 def validate(suite):
     errs = []
     if not isinstance(suite.get('cases'), list):
@@ -71,6 +139,14 @@ def validate(suite):
             continue
         if c.get('start', 'lobby') not in START:
             errs.append(f'{where}: start 는 {START}')
+        resume = c.get('resume')
+        if resume is not None:
+            # start: here 인 케이스가 앞 케이스 실패로 엉뚱한 화면에서 시작하지 않게 — 그때만 resume 의 start·steps 로 들어간다
+            if resume.get('start', 'lobby') not in ('relaunch', 'lobby'):
+                errs.append(f'{where}: resume.start 는 relaunch 또는 lobby')
+            for i, s in enumerate(resume.get('steps') or []):
+                if s.get('do') not in STEP_KEYS:
+                    errs.append(f'{where} resume step {i}: do={s.get("do")!r} 는 모르는 동작')
         steps = c.get('steps') or []
         if not any(s.get('do') == 'checkpoint' for s in steps):
             errs.append(f'{where}: checkpoint 가 하나도 없다(판정할 곳이 없다)')
@@ -112,6 +188,13 @@ def validate(suite):
                             raise ValueError(f'order.sameAs 「{item["sameAs"]}」 는 이 checkpoint 보다 앞에 있어야 한다')
                     for sel in s.get('mask', []):
                         qc.normalize(sel)
+                    if 'device' in s:
+                        dc = s['device']
+                        if not isinstance(dc, dict) or not dc or any(k not in ('aos', 'ios') for k in dc):
+                            raise ValueError('device 는 {"aos": {"model": [...], "os": [...]}, "ios": {...}}')
+                        for k, v in dc.items():
+                            if not isinstance(v, dict) or any(x not in ('model', 'os') for x in v) or not v:
+                                raise ValueError(f'device.{k} 는 model(목록)·os(목록 — "14" · ">=16")')
                 except (ValueError, KeyError, TypeError) as e:
                     errs.append(f'{where} checkpoint {s.get("name")}: {e}')
             for key in ('select',):
@@ -206,6 +289,19 @@ class Runner:
             self.restore_state(res)
         cps = [c['verdict'] for c in res['checkpoints']]
         res['verdict'] = 'ERROR' if res['error'] else qc.worst(cps)
+        skipped = [c for c in res['checkpoints'] if c.get('verdict') == 'NOT_RUN' and c.get('device')]
+        if skipped and not res['error']:
+            judged = [c for c in res['checkpoints'] if c not in skipped]
+            if not judged:
+                # 판정 줄이 모두 다른 기기용 — 이 실행은 이 TC 를 확인하지 않았다(시트 칸을 건드리지 않는다)
+                res['verdict'] = 'NOT_RUN'
+                res['reason'] = '조건 기기가 아니라 확인하지 않음 — ' + '; '.join(f'{c["name"]}: {c["device"]}' for c in skipped)
+            elif res['verdict'] == 'PASS':
+                # 일부 줄만 이 기기에서 확인 — 통과로 쓰지 않고 Check 로 남긴다(나머지 줄은 조건 기기에서 따로 본다)
+                res['verdict'] = 'UNSURE'
+                res['reason'] = '일부 줄만 이 기기에서 확인: ' + ', '.join(c['name'] for c in skipped) + ' 는 조건 기기 필요'
+        if case.get('partial'):
+            res['partial'] = case['partial']   # 시트에 쓸 때 줄을 합쳐도 Pass 로 올리지 않게 남긴다
         if case.get('partial') and res['verdict'] == 'PASS':
             # 시트 기대 중 일부만 확인한 케이스 — 통과로 쓰지 않고 사람 확인(Check)으로 남긴다
             res['verdict'] = 'UNSURE'
@@ -307,6 +403,13 @@ class Runner:
                 dev.wait(lambda: dev.call('ping').get('ok'), 90, label, '브리지 응답')
                 routes.to_lobby(dev, self.suite.get('preset'))
         elif do == 'checkpoint':
+            if s.get('device'):
+                ok, why = device_match(s['device'], self.platform, getattr(self, 'device_info', {}) or {})
+                if not ok:
+                    # 조건 기기가 아니면 이 줄은 판정하지 않는다(실패가 아니다) — 다른 기기에서 돌린 결과로 채운다
+                    res['checkpoints'].append({'name': s['name'], 'verdict': 'NOT_RUN', 'device': why, 'checks': [], 'shot': None})
+                    return
+                res.setdefault('deviceChecked', []).append({'name': s['name'], 'device': why})
             if s.get('settle', 1.0):
                 time.sleep(float(s.get('settle', 1.0)))
             res['checkpoints'].append(self.checkpoint(case, s))
@@ -500,13 +603,18 @@ def main():
     runner = Runner(dev, suite, a.platform, out, a.allow_spend)
     runner.capture_actions = not a.no_action_capture
     runner.allow_time = a.allow_time and bool(suite.get('time_ok'))
-    results = {'suite': name, 'sheet': suite.get('sheet', ''), 'platform': a.platform, 'device': a.device or '',
-               'started': stamp, 'suiteFile': os.path.abspath(a.suite_file), 'cases': []}
+    runner.device_info = device_info(a.platform, dev.device_id) if a.platform in ('aos', 'ios') else {}
+    results = {'suite': name, 'sheet': suite.get('sheet', ''), 'platform': a.platform, 'device': a.device or dev.device_id,
+               'deviceInfo': runner.device_info, 'started': stamp, 'suiteFile': os.path.abspath(a.suite_file), 'cases': []}
+    if runner.device_info:
+        di = runner.device_info
+        print(f'[{a.platform}] 기기: {di.get("model") or "?"} {di.get("name") or ""} · OS {di.get("os") or "?"}', flush=True)
     # 게임이 연결 모드로 떠 있지 않으면 되감기처럼 첫 케이스 전에 앱을 띄워 로비까지 간다(서버 프리셋·제목 영상 처리 포함)
     first = a.relaunch or dev.call('ping').get('ok') is not True
     if first and not a.relaunch:
         print(f'[{a.platform}] 게임 연결이 없어 앱을 연결 모드로 띄우고 로비까지 간다', flush=True)
     aborted = None
+    prev_clean = False   # 바로 앞 케이스가 오류 없이 끝났는가 — start: here 케이스가 그 화면을 이어받아도 되는가
     for case in cases:
         if aborted:
             r = {'id': case['id'], 'title': case.get('title', ''), 'verdict': 'ERROR', 'checkpoints': [], 'reason': '',
@@ -514,9 +622,17 @@ def main():
             results['cases'].append(r)
             print(f'[{a.platform}] ERROR   {case["id"]} — 연결이 끊겨 건너뜀', flush=True)
             continue
-        r = runner.run_case(case, relaunch_first=first)
+        run = case
+        if case.get('start') == 'here' and case.get('resume') and (first or not prev_clean):
+            rs = case['resume']
+            run = dict(case, start=rs.get('start', 'lobby'), steps=list(rs.get('steps') or []) + list(case.get('steps') or []))
+            print(f'[{a.platform}] {case["id"]} — 앞 구간이 끝까지 가지 못해 시작 화면부터 다시 들어간다', flush=True)
+        r = runner.run_case(run, relaunch_first=first)
+        if run is not case:
+            r['resumed'] = len(case['resume'].get('steps') or [])
         if r['verdict'] not in ('NOT_RUN',):
             first = False
+            prev_clean = not r.get('error')
         err = r.get('error') or {}
         if err.get('kind') == 'BRIDGE' and dev.call('ping').get('ok') is not True:
             # 연결이 끊긴 채로 나머지를 돌리면 케이스마다 제한 시간만 기다린다 — 멈추고 원인을 알린다

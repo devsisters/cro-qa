@@ -126,7 +126,6 @@ def write_report(files, platform, out):
     results_path = os.path.join(out, 'results.json')
     if not os.path.exists(results_path):
         return
-    results = qc.load_json(results_path)
     root = os.path.dirname(os.path.dirname(os.path.abspath(files[0]))) if files else ''
     info = {}
     for path in files:
@@ -137,7 +136,17 @@ def write_report(files, platform, out):
             'path': ' › '.join(v for v in (tc.get('main'), tc.get('sub1'), tc.get('sub2'), tc.get('sub3')) if v),
             'expected': tc.get('expected', ''), 'file': os.path.relpath(os.path.abspath(path), root) if root else path,
             'labels': {p.get('name'): p.get('label', '') for p in data.get('scoring') or []}}
-    results['kind'] = 'scenario'
+    write_tc_report(out, platform, info, 'scenario', '아웃게임 시나리오')
+
+
+def write_tc_report(out, platform, info, kind, title):
+    """results.json 에 TC 정보(info: 케이스 id → tab·no·path·expected·file·labels)를 붙이고 report.md 를 쓴다.
+    아웃게임 시나리오와 기본 기능 실행이 같이 쓴다 — 위에 TC 별 표, 「사람이 볼 것」, 아래에 흐름·캡처가 든 상세."""
+    results_path = os.path.join(out, 'results.json')
+    if not os.path.exists(results_path):
+        return
+    results = qc.load_json(results_path)
+    results['kind'] = kind
     for c in results.get('cases', []):
         c['scenario'] = info.get(c['id'], {})
     qc.save_json(results_path, results)
@@ -146,7 +155,7 @@ def write_report(files, platform, out):
     counts = {}
     for c in cases:
         counts[c['verdict']] = counts.get(c['verdict'], 0) + 1
-    L = [f'# 아웃게임 시나리오 [{platform.upper()}]', '',
+    L = [f'# {title} [{platform.upper()}]', '',
          f'TC {len(cases)} · ' + ' · '.join(f'{VERDICT_KO.get(v, v)} {n}' for v, n in counts.items()), '',
          '| 탭 | No | 분류 | 기대 결과 | 판정 | 사유 |', '|---|---|---|---|---|---|']
     for c in cases:
@@ -173,10 +182,21 @@ def write_report(files, platform, out):
     else:
         L.append('없음 — 모든 지점이 조건을 통과했고 사람 확인 지점이 없다.')
     L += ['', '## 상세', '']
+    last_tab = None
     for c in cases:
         sc = c.get('scenario') or {}
-        L += [f'### {sc.get("tab", "")} No.{sc.get("no", "")} — {VERDICT_KO.get(c["verdict"], c["verdict"])}', '',
-              f'- 분류: {sc.get("path", "")}', f'- 기대 결과: {sc.get("expected", "")}', f'- 시나리오: `scenarios/{sc.get("file", "")}`']
+        if kind == 'basic':
+            # 기본 기능 — 시나리오(대분류) 아래에 TC 별 리포트
+            if sc.get('tab') != last_tab:
+                last_tab = sc.get('tab')
+                L += [f'### 시나리오 {last_tab}', '']
+            L += [f'#### {sc.get("no", c["id"])} — {VERDICT_KO.get(c["verdict"], c["verdict"])}', '']
+        else:
+            L += [f'### {sc.get("tab", "")} No.{sc.get("no", "")} — {VERDICT_KO.get(c["verdict"], c["verdict"])}', '']
+        L += [
+              f'- 분류: {sc.get("path", "")}', f'- 기대 결과: {sc.get("expected", "")}']
+        if sc.get('file'):
+            L.append(f'- 시나리오: `{sc["file"] if kind == "basic" else "scenarios/" + sc["file"]}`')
         if c.get('error'):
             e = c['error']
             L.append(f'- 진행 실패: {e.get("kind")} at {e.get("step")} — {e.get("detail")}')

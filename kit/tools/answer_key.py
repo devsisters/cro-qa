@@ -32,6 +32,8 @@ def approve(run_dir, cases, checkpoint, by, note):
         for cp in c.get('checkpoints', []):
             if checkpoint and cp['name'] != checkpoint:
                 continue
+            if not cp.get('tree'):   # 조건 기기가 아니라 판정하지 않은 줄 — 화면을 남기지 않았다
+                continue
             if not all(x['ok'] for x in cp.get('checks', [])):
                 refused.append(f'{c["id"]}/{cp["name"]}: expect 실패 — 정답지로 쓸 수 없다')
                 continue

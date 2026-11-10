@@ -39,6 +39,7 @@ class Device:
         cfg = devices.get(platform, {})
         self.args = ['--platform', cfg.get('platform', platform)]
         dev = device or cfg.get('device')
+        self.device_id = dev or ''
         if dev:
             self.args += ['--device', dev]
         self.runner = runner or self._run
