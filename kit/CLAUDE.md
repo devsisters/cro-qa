@@ -212,6 +212,7 @@ Google Sheets 연결(편집 권한)로 원본 시트에 쓴다:
 - 게임 화면·트리·시트를 승인되지 않은 외부 서비스로 보내지 않는다
 - 같은 기기를 두 프로세스가 동시에 조작하지 않는다
 - `device busy`(BRIDGE) 는 같은 기기를 다른 실행이 쓰는 중이라는 뜻이다(앱의 실행·Claude 탭·터미널 어디서든). 케이스를 고치지 말고 `pgrep -fl "case_runner|basic_run|scenario_run|rewind_runner"` 로 남은 실행을 찾아 끝난 뒤 다시 돌린다
+- 점핑 이벤트(앱 접속 직후 뜨는 10주년 점핑 이벤트)는 `to_lobby` 가 보상을 받고 지나간다: 알림점이 있는 JUMP → 「보상 받기」 → 「확인」. 계정에 보상이 들어오는 상태 변경이지만 테스트 계정이라 받는다(2026-11-10 결정). 알림점 없는 잠긴 단계는 누르지 않는다
 - 닫기 버튼이 없고 「Touch!」 글자만 있는 연출 화면(신규 유저 특별 보상 `PopUpdateHighlight` 등)은 화면 가운데를 눌러 닫는다(`flowlib.close_popup` 이 한다). `NOT_REACHED … 닫는 법을 모르는 화면` 이 나면 그 화면의 트리에서 닫는 노드를 찾아 `SCREENS.md` 에 더한다
 - 캡처는 `tools/gb_device.py screenshot` 으로만 가져온다. iOS 는 devicectl 화면 캡처를 쓴다 — 앱 컨테이너(`appDataContainer`) 복사로 우회하지 않는다. 사내 배포 빌드는 컨테이너 접근이 막혀 `ContainerLookupErrorDomain error 3` 이 난다. 캡처 명령이 없다고 나오면 Xcode 를 올린다(`doctor.py` 가 점검한다)
 - 정답지 승인, 케이스의 `auto: false` 판단 근거, 시트에 없는 기대를 추가하는 것은 사람에게 확인한다

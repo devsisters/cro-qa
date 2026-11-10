@@ -8,6 +8,62 @@ PRESET = 'gb-qa-126'
 LOBBY = 'SceneNavigator'
 
 
+JUMPING_SCENES = ('SceneUaJumpingEventMain', 'PopUaJumpingEventJumpingRewardInfo', 'PopUaJumpingEventJumpingReward')
+
+
+def _badge_shown(nodes, name, owner):
+    """빨간 알림점이 지금 보이는지 — 알림점 노드는 받을 게 없으면 보이지 않는다."""
+    return [n for n in nodes if n.get('owner') == owner and n.get('name') == name and n.get('visible') and n.get('rect') and n['rect'][2] > 0]
+
+
+def _soft(tap, *args):
+    """보상 연출 중에는 로딩 화면이 잠깐 위를 덮어 누름이 막히거나(BLOCKED) 버튼이 아직 없을 수 있다(NAME_MISSING) — 실패로 끝내지 않고
+    아직 안 눌린 것으로 두어 호출자가 잠시 뒤 다시 보게 한다."""
+    try:
+        tap(*args)
+    except FlowFailure as e:
+        if e.kind not in ('BLOCKED', 'NAME_MISSING'):
+            raise
+
+
+def claim_jumping_event(dev, sc):
+    """점핑 이벤트(10주년 새싹·복귀 유저 보상) — 받을 보상이 있으면 한 걸음 나아가고 True, 받을 게 없으면 False(호출자가 닫는다).
+    메인(SceneUaJumpingEventMain): 안내 화면의 JUMP(하나뿐) → 단계 화면의, 빨간 알림점이 붙은 JUMP 버튼 → 보상 정보(PopUaJumpingEventJumpingRewardInfo): 알림점이 붙은 「보상 받기」(_btnRewardable)
+    → 로딩 → 「점핑 보상 획득!」(PopUaJumpingEventJumpingReward): 「확인」(_btnConfirm) → 메인으로 돌아온다(다음 단계에 알림점이 있으면 되풀이).
+    보상을 받으면 계정 상태가 바뀐다 — 테스트 계정이라 받는다(2026-11-10 결정). 알림점이 없는 잠긴 JUMP(STEP 2)는 누르지 않는다."""
+    ns = dev.nodes()
+    if sc == 'PopUaJumpingEventJumpingReward':
+        if dev.find(inst='_btnConfirm', owner=sc, nodes=ns):
+            _soft(dev.tap, '_btnConfirm', 'jumping reward confirm')
+            return True
+        return False
+    if sc == 'PopUaJumpingEventJumpingRewardInfo':
+        if _badge_shown(ns, 'uaJumpingRewardRewardStep', sc) and dev.find(inst='_btnRewardable', owner=sc, nodes=ns):
+            _soft(dev.tap, '_btnRewardable', 'jumping claim')
+            return True
+        return False
+    for badge in _badge_shown(ns, 'uaJumpingEventJumpReward', 'CellUaJumpingEventBtnJump'):
+        bx, by, bw, bh = badge['rect']
+        cx, cy = bx + bw / 2, by + bh / 2
+        for n in ns:
+            if n.get('owner') == 'CellUaJumpingEventBtnJump' and n.get('receiver') == 'button' and n.get('rect'):
+                x, y, w, h = n['rect']
+                if x - 10 <= cx <= x + w + 10 and y - 10 <= cy <= y + h + 10:
+                    _soft(dev.tap_node, n, 'jumping JUMP')
+                    return True
+    # 첫 안내 화면(「새로 오신 것을 환영해요!」) — 버튼이 JUMP 하나뿐이다. 눌러야 단계(STEP 1·2) 화면으로 넘어간다
+    for t in [n for n in ns if n.get('owner') == sc and n.get('text') == 'JUMP!' and n.get('rect')]:
+        tx, ty, tw, th = t['rect']
+        cx, cy = tx + tw / 2, ty + th / 2
+        for n in ns:
+            if n.get('owner') == sc and n.get('receiver') == 'button' and n.get('rect'):
+                x, y, w, h = n['rect']
+                if x <= cx <= x + w and y <= cy <= y + h:
+                    _soft(dev.tap_node, n, 'jumping intro JUMP')
+                    return True
+    return False
+
+
 def to_lobby(dev, preset=None, timeout=1800):
     """앱을 띄운 직후 어디서든 로비까지: 프리셋 → 다운로드 확인 → 약관(필수만) → 튜토리얼(Super User + Skip)
     → 첫 실행 팝업·이벤트 화면 닫기. 리소스 다운로드가 길어 timeout 이 크다."""
@@ -15,6 +71,7 @@ def to_lobby(dev, preset=None, timeout=1800):
     end = time.time() + timeout
     calm = 0
     unknown = {}
+    jump_taps = 0
     while time.time() < end:
         sc = dev.scene()
         if sc == 'PopServerSelect':
@@ -38,6 +95,13 @@ def to_lobby(dev, preset=None, timeout=1800):
             calm += 1
             if calm >= 4:
                 return
+            time.sleep(2)
+            continue
+        elif sc == 'SceneLoading':
+            time.sleep(1)    # 보상 받기 뒤 같은 잠깐 뜨는 로딩 — 닫을 것이 아니다
+            continue
+        elif sc in JUMPING_SCENES and jump_taps < 24 and claim_jumping_event(dev, sc):
+            jump_taps += 1   # 보상이 있으면 받고(여러 단계면 되풀이), 받을 게 없으면 아래 일반 팝업 닫기로 간다
             time.sleep(2)
             continue
         elif sc and sc not in ('Title', None):

@@ -96,8 +96,55 @@ class FlowlibTest(unittest.TestCase):
         self.assertIsNone(device(FakeBridge(nodes=[])).close_popup('Pop'))
 
 
-if __name__ == '__main__':
-    unittest.main()
+
+class JumpingEventTest(unittest.TestCase):
+    BTN = {'owner': 'CellUaJumpingEventBtnJump', 'receiver': 'button', 'rect': [246, 13, 140, 54]}
+    DOT = {'owner': 'CellUaJumpingEventBtnJump', 'inst': '_gNodeBadge', 'name': 'uaJumpingEventJumpReward', 'visible': True, 'rect': [366, 46, 30, 30]}
+    LOCKED = {'owner': 'CellUaJumpingEventBtnJump', 'receiver': 'button', 'rect': [448, 13, 140, 54]}
+
+    def taps(self, bridge):
+        return [c for c in bridge.calls if c[0] == 'tap']
+
+    def test_main_taps_only_the_jump_button_with_red_dot(self):
+        from routes import claim_jumping_event
+        bridge = FakeBridge(nodes=[self.LOCKED, self.BTN, self.DOT])
+        self.assertTrue(claim_jumping_event(device(bridge), 'SceneUaJumpingEventMain'))
+        self.assertEqual(self.taps(bridge)[-1][1:5], ('--x', '316.0', '--y', '40.0'))
+
+    def test_main_without_red_dot_taps_nothing(self):
+        from routes import claim_jumping_event
+        bridge = FakeBridge(nodes=[self.BTN, self.LOCKED, dict(self.DOT, visible=False)])
+        self.assertFalse(claim_jumping_event(device(bridge), 'SceneUaJumpingEventMain'))
+        self.assertEqual(self.taps(bridge), [])
+
+    def test_intro_screen_taps_its_single_jump_button(self):
+        from routes import claim_jumping_event
+        sc = 'SceneUaJumpingEventMain'
+        nodes = [{'owner': sc, 'receiver': 'button', 'rect': [276, 13, 140, 54]},
+                 {'owner': sc, 'text': 'JUMP!', 'rect': [280, 17, 130, 48]},
+                 {'owner': sc, 'receiver': 'button', 'rect': [628, 284, 40, 40]}]
+        bridge = FakeBridge(nodes=nodes)
+        self.assertTrue(claim_jumping_event(device(bridge), sc))
+        self.assertEqual(self.taps(bridge)[-1][1:5], ('--x', '346.0', '--y', '40.0'))
+
+    def test_reward_info_claims_only_with_badge(self):
+        from routes import claim_jumping_event
+        pop = 'PopUaJumpingEventJumpingRewardInfo'
+        claim = {'owner': pop, 'inst': '_btnRewardable', 'receiver': 'button', 'rect': [451, 46, 140, 54]}
+        dot = {'owner': pop, 'inst': '_gNodeBadge1', 'name': 'uaJumpingRewardRewardStep', 'visible': True, 'rect': [571, 79, 30, 30]}
+        bridge = FakeBridge(nodes=[claim, dot])
+        self.assertTrue(claim_jumping_event(device(bridge), pop))
+        self.assertEqual(len(self.taps(bridge)), 1)
+        none = FakeBridge(nodes=[claim])
+        self.assertFalse(claim_jumping_event(device(none), pop))
+        self.assertEqual(self.taps(none), [])
+
+    def test_reward_popup_confirms(self):
+        from routes import claim_jumping_event
+        pop = 'PopUaJumpingEventJumpingReward'
+        bridge = FakeBridge(nodes=[{'owner': pop, 'inst': '_btnConfirm', 'receiver': 'button', 'rect': [276, 72, 140, 40]}])
+        self.assertTrue(claim_jumping_event(device(bridge), pop))
+        self.assertEqual(len(self.taps(bridge)), 1)
 
 
 class PresetAndTitleTest(unittest.TestCase):
@@ -158,3 +205,7 @@ class PresetAndTitleTest(unittest.TestCase):
                                                  {'inst': '_spriteDontShowAgainCheck', 'rect': [10, 10, 20, 20]}])
         self.routes.skip_title_movie(device(bridge))
         self.assertFalse([c for c in bridge.calls if c[0] == 'tap'])
+
+
+if __name__ == '__main__':
+    unittest.main()
