@@ -440,6 +440,27 @@ def load_tcs():
     return qc.load_json(TC_FILE).get('tcs', [])
 
 
+def emit(obj, save=None):
+    """결과 JSON 을 출력한다. save 를 주면 파일에 쓰고 요약만 출력한다 — 179행 탭처럼 출력이 길면
+    셸 리다이렉트(>)나 python3 -c 로 살펴보지 않고 이 파일을 Read 로 읽게 한다(앱 안 Claude 의 허용 목록 밖 명령이 줄어든다)"""
+    if not save:
+        print(json.dumps(obj, ensure_ascii=False))
+        return
+    os.makedirs(os.path.dirname(os.path.abspath(save)), exist_ok=True)
+    with open(save, 'w', encoding='utf-8') as f:
+        json.dump(obj, f, ensure_ascii=False, indent=1)
+        f.write('\n')
+    summary = {}
+    for k, v in obj.items():
+        if isinstance(v, list):
+            summary[k] = f'{len(v)}개'
+        elif isinstance(v, dict):
+            summary[k] = {kk: (f'{len(vv)}개' if isinstance(vv, list) else vv) for kk, vv in v.items()}
+        else:
+            summary[k] = v
+    print(json.dumps({'saved': save, 'summary': summary}, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
@@ -453,12 +474,14 @@ def main():
     p = sub.add_parser('create')
     p.add_argument('--version', required=True)
     p.add_argument('--sheet-id', type=int, required=True)
+    p.add_argument('--save', help='결과를 이 파일에 쓰고 요약만 출력한다(출력이 길 때)')
     p = sub.add_parser('update')
     p.add_argument('--run', action='append', required=True)
     p.add_argument('--ids', required=True)
     p.add_argument('--cols', required=True)
     p.add_argument('--version')
     p.add_argument('--sheet-id', type=int, help='버전 탭 sheetId — 주면 캡처 링크 칸의 링크 서식 요청(linkRequests)을 만든다')
+    p.add_argument('--save', help='결과를 이 파일에 쓰고 요약만 출력한다(출력이 길 때)')
     p = sub.add_parser('rows')
     p.add_argument('--run', required=True)
     p = sub.add_parser('shots')
@@ -482,7 +505,7 @@ def main():
         elif a.cmd == 'create':
             out = create_payload(a.version, a.sheet_id, load_tcs())
             out['spreadsheetId'] = info.get('spreadsheetId')
-            print(json.dumps(out, ensure_ascii=False))
+            emit(out, a.save)
         elif a.cmd == 'update':
             runs, version = [], a.version
             for d in a.run:
@@ -504,7 +527,7 @@ def main():
             elif links:
                 plan['note'] = '캡처 링크 칸이 있다 — --sheet-id 를 주면 링크 서식 요청(linkRequests)도 만든다'
             plan.update({'ok': True, 'spreadsheetId': info.get('spreadsheetId'), 'tab': str(version)})
-            print(json.dumps(plan, ensure_ascii=False))
+            emit(plan, a.save)
         elif a.cmd == 'shots':
             import hashlib
             meta = run_meta(a.run)

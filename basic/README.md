@@ -96,13 +96,13 @@ cd kit
 1. 탭이 있는지 본다 — `get_spreadsheet`(fields `sheets.properties.title`, `sheets.properties.sheetId`).
 2. 없으면 만든다.
    - `python3 tools/basic_sheet.py add-tab --version <버전>` 의 `requests` 를 `update_spreadsheet` 로 보낸다. 응답의 `sheetId` 를 받는다.
-   - `python3 tools/basic_sheet.py create --version <버전> --sheet-id <sheetId>` 의 `values` 와 `summary` 를 `update_values` 로, `requests` 를 `update_spreadsheet` 로 보낸다.
+   - `python3 tools/basic_sheet.py create --version <버전> --sheet-id <sheetId> --save runs/<실행>/sheet-create.json` 으로 파일에 쓰고 Read 로 읽어, `values` 와 `summary` 를 `update_values` 로, `requests` 를 `update_spreadsheet` 로 보낸다(출력이 길어 화면으로 받지 않는다).
 3. 캡처를 올린다. 실행 폴더마다 `python3 tools/basic_sheet.py shots --run runs/<실행>` 을 본다.
    - `folder.id` 가 비어 있으면 **먼저 찾는다** — Google Drive `search_files` 에 `folder.search` 질의를 그대로 넣는다. 다른 사람·다른 컴퓨터가 이미 만든 버전 폴더가 있으면 그 폴더에 쌓는다(여럿이면 만든 시각이 가장 이른 것). 없을 때만 캡처 폴더(`captureFolderId`) 아래에 버전 탭 이름의 폴더를 만든다. 찾았거나 만든 id 는 `sheet.json` 의 `captureFolders` 에 적는다(저장소에 커밋해 팀이 같은 폴더를 쓴다).
    - `files` 중 `uploaded: false` 인 것을 Google Drive `create_file` 로 올린다 — `title` 그대로, `parentId` 는 `folder.id`, `contentMimeType` 은 `mime`, `disableConversionToGoogleType: true`, `base64Content` 는 `sha256:<sha256>:<path>` 파일 참조(`path` 는 도구가 만든 축소 사본). 돌려받은 id 를 `runs/<실행>/drive.json` 에 `{"files": {"<rel>": "<id>"}}` 로 적는다.
 4. 지금 값을 읽는다. `get_values` 로 `'<버전>'!A1:D` 와 `'<버전>'!H1:M` 을 읽고, 응답 JSON 을 그대로 `runs/<실행>/sheet-ids.json` · `runs/<실행>/sheet-cols.json` 에 저장한다.
 5. 쓸 칸을 정한다.
-   `python3 tools/basic_sheet.py update --run runs/<실행> [--run runs/<다른 플랫폼 실행>] --ids runs/<실행>/sheet-ids.json --cols runs/<실행>/sheet-cols.json --sheet-id <탭 sheetId>`
+   `python3 tools/basic_sheet.py update --run runs/<실행> [--run runs/<다른 플랫폼 실행>] --ids runs/<실행>/sheet-ids.json --cols runs/<실행>/sheet-cols.json --sheet-id <탭 sheetId> --save runs/<실행>/sheet-update.json` — 결과는 그 파일을 Read 로 읽는다
    - `updates` 의 각 `{range, values}` 를 `update_values` 로 쓴다.
    - 그다음 `linkRequests` 를 `update_spreadsheet` 로 보낸다 — 결과 칸의 캡처 URL 을 눌리는 링크로 만든다(값만 쓰면 글 중간 URL 은 링크가 되지 않는다).
    - `skipped` 는 사람이 이미 적은 결과라서 쓰지 않은 것이다. 그대로 보고한다.

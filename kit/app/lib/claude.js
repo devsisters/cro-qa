@@ -31,10 +31,13 @@ function ruleFor(denial, always) {
 }
 
 /** 시나리오 폴더를 정했으면 Claude 가 그 폴더도 보고 고칠 수 있게 한다. */
+// 앱에서 사람이 보는 글은 한국어. Bash 를 이으면 허용 목록에 걸려 대화가 「허락이 필요해 멈춘 작업」 으로 멈춘다(키트 CLAUDE.md 「답하는 말과 명령 쓰는 법」)
+const HOUSE_RULES = '사람에게 보이는 답·진행·결과 보고는 한국어로 쓴다(코드·명령·로그·식별자는 원문). Bash 는 한 번에 명령 하나만 쓰고 cd·;·&&·|·> 로 잇지 않는다. 파일 읽기는 Read, 찾기는 Grep·Glob 을 쓰고, 긴 도구 출력은 도구의 --save 옵션으로 실행 폴더에 저장해 Read 로 읽는다.';
+
 function scenarioArgs() {
   const dir = kit.scenarioRoot();
-  if (!dir) return [];
-  return ['--add-dir', dir, '--append-system-prompt', `이 QA 앱의 케이스는 키트 cases/ 가 아니라 시나리오 저장소 ${dir} 에 있다 — 케이스 ${dir}/cases, 아웃게임 시나리오 ${dir}/scenarios(형식은 ${dir}/scenarios/README.md, 돌리기는 키트의 tools/scenario_run.py), 문서(md) ${dir}/docs, 프리셋 ${dir}/presets, 기본 기능 시트 사본·시나리오·결과 쓰기 절차 ${dir}/basic(README.md — 시나리오는 ${dir}/basic/scenarios, 돌리기는 tools/basic_run.py). 케이스·시나리오를 만들거나 고치면 그 폴더에 쓴다. 시나리오를 고칠 때 사람이 말한 교정·유의사항은 그 파일의 notes 에 남긴다. 게임 화면 정보는 트리 전체를 읽지 말고 키트의 tools/ui_find.py(화면 요약·걸러 보기)로 필요한 부분만 본다 — 트리 전체가 토큰을 가장 많이 쓴다. 이 폴더는 팀이 공유하는 git 저장소다. 충돌 해결을 부탁받으면 양쪽 변경을 모두 살려 합치고, 합친 결과를 사용자에게 보여 준 뒤 확인을 받고 커밋·올린다. 강제 push·히스토리 재작성은 하지 않는다.`];
+  if (!dir) return ['--append-system-prompt', HOUSE_RULES];
+  return ['--add-dir', dir, '--append-system-prompt', `${HOUSE_RULES}\n이 QA 앱의 케이스는 키트 cases/ 가 아니라 시나리오 저장소 ${dir} 에 있다 — 케이스 ${dir}/cases, 아웃게임 시나리오 ${dir}/scenarios(형식은 ${dir}/scenarios/README.md, 돌리기는 키트의 tools/scenario_run.py), 문서(md) ${dir}/docs, 프리셋 ${dir}/presets, 기본 기능 시트 사본·시나리오·결과 쓰기 절차 ${dir}/basic(README.md — 시나리오는 ${dir}/basic/scenarios, 돌리기는 tools/basic_run.py). 케이스·시나리오를 만들거나 고치면 그 폴더에 쓴다. 시나리오를 고칠 때 사람이 말한 교정·유의사항은 그 파일의 notes 에 남긴다. 게임 화면 정보는 트리 전체를 읽지 말고 키트의 tools/ui_find.py(화면 요약·걸러 보기)로 필요한 부분만 본다 — 트리 전체가 토큰을 가장 많이 쓴다. 이 폴더는 팀이 공유하는 git 저장소다. 충돌 해결을 부탁받으면 양쪽 변경을 모두 살려 합치고, 합친 결과를 사용자에게 보여 준 뒤 확인을 받고 커밋·올린다. 강제 push·히스토리 재작성은 하지 않는다.`];
 }
 
 function claudeCommand() {
