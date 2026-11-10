@@ -51,21 +51,54 @@ class ResultCellsTest(unittest.TestCase):
             self.assertIn('조건 2개 통과', rows['TC-028'][1])
             self.assertIn('✗ 보임: 보유하지 않음 (없음)', rows['TC-029'][1])
             self.assertIn('진행 실패', rows['TC-030'][1])
-            self.assertTrue(rows['TC-028'][2].startswith('2026-11-10 15:20 · 담당자 · '))
+            self.assertTrue(rows['TC-028'].stamp.startswith('2026-11-10 15:20 · 담당자 · '))
+            self.assertEqual(rows['TC-028'][2], '', '결과 칸에는 캡처만 — 실행 기록은 쓰지 않는다')
 
     def test_plan_writes_platform_cells_merges_rows_and_keeps_human_results(self):
         with tempfile.TemporaryDirectory() as d:
             run = make_run(d, 'basic-14.50-ios-20261110-152000', 'ios', [PASS, FAIL, ERR])
             _, rows = basic_sheet.result_rows(run)
-            ids = [['ID'], ['TC-027'], ['TC-028'], ['TC-029'], ['TC-030']]
-            # G:L — TC-030 의 iOS 칸은 사람이 Fail 로 적었다(실행 칸 비어 있음)
-            cols = [['AOS', 'AOS 근거', 'AOS 실행', 'iOS', 'iOS 근거', 'iOS 실행'], ['N/T'], ['N/T', '', '', 'N/T'],
+            # A:D — TC-029 는 담당자가 이미 적혀 있다
+            ids = [['ID', '대분류', '중분류', '담당자'], ['TC-027'], ['TC-028', '', '', ''], ['TC-029', '', '', '담당자'], ['TC-030']]
+            # H:M — TC-030 의 iOS 칸은 사람이 Fail 로 적었다(결과 칸 비어 있음)
+            cols = [['AOS', 'AOS 근거', 'AOS 결과', 'iOS', 'iOS 근거', 'iOS 결과'], ['N/T'], ['N/T', '', '', 'N/T'],
                     ['Pass', 'x', '자동', 'Pass', 'y', '2026-11-09 · 자동'], ['N/T', '', '', 'Fail', '', '']]
             plan = basic_sheet.plan_update('14.50', [('ios', rows)], ids, cols)
-            self.assertEqual([u['range'] for u in plan['updates']], ["'14.50'!J3:L4"])
-            self.assertEqual(plan['updates'][0]['values'][0][0], 'Pass')
-            self.assertEqual(plan['updates'][0]['values'][1][0], 'Fail', '자동 결과는 덮어쓴다')
+            self.assertEqual([u['range'] for u in plan['updates']], ["'14.50'!D3", "'14.50'!K3:M4"])
+            self.assertEqual(plan['updates'][0]['values'], [['담당자']], '담당자 칸에 돌린 계정')
+            self.assertEqual(plan['updates'][1]['values'][0][0], 'Pass')
+            self.assertEqual(plan['updates'][1]['values'][1][0], 'Fail', '자동 결과는 덮어쓴다')
             self.assertEqual([(x['id'], x['platform']) for x in plan['skipped']], [('TC-030', 'ios')])
+
+    def test_link_requests_make_urls_clickable(self):
+        text = '2026 · 최저\n최저사양: https://drive.google.com/file/d/X/view\nlobby: https://d/Y'
+        req = basic_sheet.link_requests(7, [(4, 'J', text)])[0]['updateCells']
+        self.assertEqual(req['range'], {'sheetId': 7, 'startRowIndex': 3, 'endRowIndex': 4, 'startColumnIndex': 9, 'endColumnIndex': 10})
+        cell = req['rows'][0]['values'][0]
+        self.assertEqual(cell['userEnteredValue']['stringValue'], text)
+        links = [(r['startIndex'], r['format'].get('link', {}).get('uri')) for r in cell['textFormatRuns']]
+        s1 = text.index('https://drive')
+        self.assertEqual(links[0], (0, None))
+        self.assertEqual(links[1], (s1, 'https://drive.google.com/file/d/X/view'))
+        self.assertEqual(links[-1][1], 'https://d/Y')
+
+    def test_owner_is_appended_not_replaced(self):
+        self.assertEqual(basic_sheet.owner_value('', 'A'), 'A')
+        self.assertIsNone(basic_sheet.owner_value('A', 'A'))
+        self.assertEqual(basic_sheet.owner_value('B', 'A'), 'B, A')
+
+    def test_result_cell_has_run_record_and_capture_links(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, 'basic-14.50-aos-20261110-152000')
+            shot = os.path.join(out, 'TC-028', 'aos-tabs-1.png')
+            write(shot, {})
+            case = dict(PASS, checkpoints=[dict(PASS['checkpoints'][0], shot=shot)])
+            make_run(d, os.path.basename(out), 'aos', [case])
+            _, rows = basic_sheet.result_rows(out)
+            self.assertIn('tabs: (올리지 않음) TC-028/aos-tabs-1.png', rows['TC-028'][2])
+            write(os.path.join(out, 'drive.json'), {'files': {'TC-028/aos-tabs-1.png': 'FID'}})
+            _, rows = basic_sheet.result_rows(out)
+            self.assertEqual(rows['TC-028'][2], 'tabs: https://drive.google.com/file/d/FID/view')
 
     def test_device_lines_merge_with_earlier_run_instead_of_overwriting(self):
         """TC-003 처럼 줄마다 조건 기기가 다른 TC — 다른 기기에서 먼저 쓴 줄 결과를 살려 합친다"""
@@ -80,20 +113,24 @@ class ResultCellsTest(unittest.TestCase):
             _, r1 = basic_sheet.result_rows(make_run(d, 'basic-14.50-aos-20261110-150000', 'aos', [first]))
             self.assertEqual(r1['TC-003'][0], 'Check')
             # 첫 실행 결과가 시트에 있는 상태에서 두 번째 기기 결과를 쓴다
-            cols = [['AOS', 'AOS 근거', 'AOS 실행'], r1['TC-003']]
+            # 앞 실행 결과 칸에는 최저사양 캡처 링크가 있었다
+            old = list(r1['TC-003'])
+            old[2] = '최저사양: https://drive.google.com/file/d/OLD/view'
+            cols = [['AOS', 'AOS 근거', 'AOS 결과'], old]
             _, r2 = basic_sheet.result_rows(make_run(d, 'basic-14.50-aos-20261110-160000', 'aos', [second]))
             plan = basic_sheet.plan_update('14.50', [('aos', r2)], [['ID'], ['TC-003']], cols)
-            status, reason, stamp = plan['updates'][0]['values'][0]
+            cells = {u['range']: u['values'][0] for u in plan['updates']}
+            status, reason, result = cells["'14.50'!H2:J2"]
             self.assertEqual(status, 'Pass', '두 줄 모두 조건 기기에서 통과')
             self.assertIn(low_dev, reason)
             self.assertIn(new_dev, reason)
             self.assertNotIn('확인 안 함', reason)
-            self.assertIn('앞 실행에서 가져온 줄', stamp)
+            self.assertEqual(result, '최저사양: https://drive.google.com/file/d/OLD/view', '가져온 줄의 캡처를 남긴다(이번 실행은 캡처 없음)')
             # 실패 줄이 있으면 Fail, partial 이 있으면 Check
             r2['TC-003'].partial = '다른 줄'
             plan = basic_sheet.plan_update('14.50', [('aos', r2)], [['ID'], ['TC-003']], cols)
-            self.assertEqual(plan['updates'][0]['values'][0][0], 'Check')
-            # 사람이 적은 칸(실행 칸 비어 있음)은 여전히 건드리지 않는다
+            self.assertEqual({u['range']: u['values'][0] for u in plan['updates']}["'14.50'!H2:J2"][0], 'Check')
+            # 사람이 적은 칸(근거·결과 칸 비어 있음)은 여전히 건드리지 않는다
             plan = basic_sheet.plan_update('14.50', [('aos', r2)], [['ID'], ['TC-003']], [['AOS'], ['Fail', '', '']])
             self.assertEqual(len(plan['skipped']), 1)
 
@@ -104,17 +141,20 @@ class ResultCellsTest(unittest.TestCase):
             tcs = {'TC-028': {'area': '쿠키 인벤토리', 'sub': '분류', 'priority': 'Critical', 'check': '탭', 'class': '화면'}}
             plan = basic_sheet.plan_update('14.50', [('aos', rows)], [['ID'], ['TC-001']], [['AOS']], tcs)
             self.assertEqual(plan['appended'], ['TC-028'])
-            self.assertEqual(plan['updates'][0]['range'], "'14.50'!A3:I3")
-            self.assertEqual(plan['updates'][0]['values'][0][:6], ['TC-028', '쿠키 인벤토리', '분류', 'Critical', '탭', '화면'])
-            self.assertEqual(plan['updates'][0]['values'][0][6], 'Pass')
+            self.assertEqual(plan['updates'][0]['range'], "'14.50'!A3:J3")
+            self.assertEqual(plan['updates'][0]['values'][0][:7], ['TC-028', '쿠키 인벤토리', '분류', '담당자', 'Critical', '탭', '화면'])
+            self.assertEqual(plan['updates'][0]['values'][0][7], 'Pass')
 
     def test_create_payload_shape(self):
         tcs = [{'id': 'TC-001', 'area': 'a', 'sub': 'b', 'priority': 'Major', 'check': 'c', 'class': '화면'}]
         p = basic_sheet.create_payload('14.50', 123, tcs)
-        self.assertEqual(p['values']['range'], "'14.50'!A1:M2")
+        self.assertEqual(p['values']['range'], "'14.50'!A1:N2")
         self.assertEqual(p['values']['values'][0], basic_sheet.RESULT_HEADER)
-        self.assertEqual(p['values']['values'][1][6], 'N/T')
-        self.assertTrue(p['summary']['values'][1][1].startswith('=COUNTIF($G$2:$G'))
+        self.assertEqual(p['values']['values'][0][3], '담당자')
+        self.assertEqual((p['values']['values'][1][7], p['values']['values'][1][10]), ('N/T', 'N/T'))
+        self.assertEqual(p['summary']['range'], "'14.50'!P1:R6")
+        self.assertTrue(p['summary']['values'][1][1].startswith('=COUNTIF($H$2:$H,P2'))
+        self.assertTrue(p['summary']['values'][1][2].startswith('=COUNTIF($K$2:$K,P2'))
         self.assertTrue(all(r.get(next(iter(r)), {}) for r in p['requests']))
 
     def test_quote_tab_with_apostrophe(self):
@@ -166,6 +206,18 @@ class ScenarioTest(unittest.TestCase):
         self.assertEqual(c['TC-3']['resume'], {'start': 'lobby', 'steps': setup + entry})
         self.assertEqual((c['TC-4']['start'], len(c['TC-4']['steps'])), ('lobby', 3))
         self.assertEqual(c['TC-2']['answersDir'], '/r/쿠키')
+
+    def test_segment_setup_runs_fresh_and_keeps_other_tcs_free_of_it(self):
+        mac = [{'do': 'state', 'op': 'remove', 'path': 'p'}]
+        data = {'area': '쿠키', 'start': 'lobby', 'entry': [{'do': 'tap', 'target': '_b'}], 'segments': [
+            {'tc': 'TC-1', 'steps': [{'do': 'checkpoint', 'name': 'a'}]},
+            {'tc': 'TC-2', 'setup': mac, 'steps': [{'do': 'checkpoint', 'name': 'b'}]},
+            {'tc': 'TC-3', 'steps': [{'do': 'checkpoint', 'name': 'c'}]}]}
+        c = {x['id']: x for x in basic_scenario.build_cases(data, '/r/x.json')}
+        self.assertEqual([s['do'] for s in c['TC-1']['steps']], ['tap', 'checkpoint'])
+        self.assertEqual((c['TC-2']['start'], [s['do'] for s in c['TC-2']['steps']]), ('lobby', ['state', 'tap', 'checkpoint']))
+        self.assertEqual(c['TC-3']['start'], 'here')
+        self.assertEqual(c['TC-3']['resume']['steps'], [{'do': 'tap', 'target': '_b'}], '구간 setup 은 다른 구간 resume 에 들어가지 않는다')
 
     def test_check_flags_tc_from_other_group(self):
         by = {t['id']: t for t in self.TCS}

@@ -52,7 +52,7 @@ def main():
         errs += basic_scenario.check(qc.load_json(f), f, by_id)
     suite = basic_scenario.build_suite(files, tcs)
     os.makedirs(qc.RUNS, exist_ok=True)
-    tmp = os.path.join(qc.RUNS, '_basic-suite.json')
+    tmp = os.path.join(qc.RUNS, f'_basic-suite-{a.platform or "check"}.json')   # 플랫폼마다 따로 — 두 기기를 동시에 돌린다
     qc.save_json(tmp, suite)
     if a.check:
         if errs:

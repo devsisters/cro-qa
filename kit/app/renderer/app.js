@@ -1440,7 +1440,7 @@ $('#repSheet').addEventListener('click', async () => {
   const runs = await qa.runsList().catch(() => []);
   const other = runs.map((r) => r.name).find((n) => n !== name && n.startsWith(`basic-${m[1]}-${m[2] === 'ios' ? 'aos' : 'ios'}-`));
   const list = [name, other].filter(Boolean);
-  const prompt = `기본 기능 결과를 시트에 써줘. 버전 「${m[1]}」 탭이다.\n실행 폴더: ${list.map((n) => `runs/${n}`).join(', ')}\n\nbasic/README.md 「결과 쓰기」 절차대로 한다 — 탭이 없으면 만들고, A열로 행을 찾아 실행한 플랫폼의 결과·근거·실행 칸만 쓴다. 사람이 적은 결과는 덮어쓰지 않는다. 다 쓰면 몇 개를 썼는지와 건너뛴 것을 알려줘.`;
+  const prompt = `기본 기능 결과를 시트에 써줘. 버전 「${m[1]}」 탭이다.\n실행 폴더: ${list.map((n) => `runs/${n}`).join(', ')}\n\nbasic/README.md 「결과 쓰기」 절차대로 한다 — 탭이 없으면 만들고, A열로 행을 찾아 담당자 칸과 실행한 플랫폼의 판정·근거·결과 칸만 쓴다(결과 칸의 캡처는 Drive 에 올려 링크로). 사람이 적은 결과는 덮어쓰지 않는다. 다 쓰면 몇 개를 썼는지와 건너뛴 것을 알려줘.`;
   activateTab('chat');
   $('#chatNew').click();
   $('#chatInput').value = prompt;

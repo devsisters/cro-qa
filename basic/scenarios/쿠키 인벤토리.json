@@ -3,15 +3,6 @@
  "sub": "",
  "start": "lobby",
  "server": "gb-qa-126",
- "setup": [
-  {
-   "do": "state",
-   "op": "remove",
-   "path": "inventory.pets.@id=201800",
-   "max_refs": 2,
-   "label": "펫 하나를 미보유로(마카롱)"
-  }
- ],
  "entry": [
   {
    "do": "tap",
@@ -241,6 +232,15 @@
       ]
      }
     }
+   ],
+   "setup": [
+    {
+     "do": "state",
+     "op": "remove",
+     "path": "inventory.pets.@id=201800",
+     "max_refs": 2,
+     "label": "펫 하나를 미보유로(마카롱)"
+    }
    ]
   },
   {
@@ -393,6 +393,15 @@
      "do": "back",
      "after": 2
     }
+   ],
+   "setup": [
+    {
+     "do": "state",
+     "op": "remove",
+     "path": "inventory.pets.@id=201800",
+     "max_refs": 2,
+     "label": "펫 하나를 미보유로(마카롱)"
+    }
    ]
   }
  ],
@@ -406,8 +415,14 @@
    "at": "2026-11-10",
    "by": "이전",
    "text": "카드 선택은 팝업이 아니라 상세 페이지(SceneCPTCookieInfo, 「…자세히 보기」)로 이동한다"
+  },
+  {
+   "at": "2026-11-10",
+   "by": "Claude",
+   "text": "마카롱 상태(펫 201800 미보유)를 시나리오 setup 에서 TC-029·TC-030 구간 setup 으로 옮겼다 — 14.50 실행에서 키트 Chrome(마카롱) 연결이 없어 마카롱이 필요 없는 TC-028 까지 Block 이 됐다. 이제 TC-028 은 마카롱 없이 돌고, 029·030 은 각자 처음부터 들어간다(이미 미보유면 마카롱은 건너뛴다)"
   }
  ],
  "createdBy": "",
- "updatedAt": "2026-11-10T11:17:44"
+ "updatedAt": "2026-11-10T12:32:05",
+ "setup": []
 }

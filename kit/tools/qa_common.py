@@ -29,7 +29,7 @@ def load_json(path):
 
 def save_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + '.tmp'
+    tmp = f'{path}.{os.getpid()}.tmp'   # 프로세스마다 다른 임시 파일 — iOS·Android 실행이 같은 파일을 동시에 쓸 때 서로의 임시 파일을 옮겨 버리지 않게
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     os.replace(tmp, path)

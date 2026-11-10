@@ -80,10 +80,13 @@ def build_cases(data, path, tcs_by_id=None):
     """시나리오 하나 → case_runner 케이스 목록(TC 구간마다 하나).
     첫 구간: start → setup(마카롱 상태 등) → entry(이 화면까지 들어가기) → 구간 단계.
     다음 구간: 앞 구간이 끝난 화면에서 이어 간다(start: here). 앞 구간이 진행에 실패했으면 resume 으로 start → setup → entry 부터.
-    fresh: true 인 구간은 앞 구간과 상관없이 처음부터 들어간다."""
+    fresh: true 인 구간, 구간 setup 이 있는 구간은 앞 구간과 상관없이 처음부터 들어간다(start → setup → 구간 setup → entry).
+    마카롱처럼 일부 TC 에만 필요한 준비는 시나리오 setup 이 아니라 그 구간의 setup 에 둔다 — 준비가 실패해도 다른 TC 는 돈다."""
     tcs_by_id = tcs_by_id or {}
     start = data.get('start', 'lobby')
-    head = list(data.get('setup') or []) + list(data.get('entry') or [])
+    setup = list(data.get('setup') or [])
+    entry = list(data.get('entry') or [])
+    head = setup + entry
     answers = os.path.splitext(os.path.abspath(path))[0]
     cases, entered = [], False
     for seg in data.get('segments') or []:
@@ -92,8 +95,9 @@ def build_cases(data, path, tcs_by_id=None):
                 'answersDir': answers, 'sheet': {'expected': tc.get('check', '')}}
         if not runnable(seg):
             case.update({'auto': False, 'reason': seg.get('reason') or '아직 자동화 단계가 없다', 'steps': []})
-        elif seg.get('fresh') or not entered or start == 'here':
-            case.update({'auto': True, 'start': start, 'steps': head + list(seg['steps'])})
+        elif seg.get('fresh') or seg.get('setup') or not entered or start == 'here':
+            # 구간 setup(마카롱 상태 등)이 있는 구간도 처음부터 — 그 준비가 필요 없는 TC 까지 마카롱에 묶이지 않게 구간에 둔다
+            case.update({'auto': True, 'start': start, 'steps': setup + list(seg.get('setup') or []) + entry + list(seg['steps'])})
             entered = True
         else:
             case.update({'auto': True, 'start': 'here', 'steps': list(seg['steps']), 'resume': {'start': start, 'steps': head}})

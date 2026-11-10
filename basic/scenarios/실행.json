@@ -21,7 +21,7 @@
       "scene": "SceneNavigator",
       "tappable": ["_btnShopGacha", "_btnPlay"]
      },
-     "image": false
+     "image": "capture"
     }
    ]
   },
@@ -40,7 +40,7 @@
       "scene": "SceneNavigator",
       "tappable": ["_btnShopGacha", "_btnPlay"]
      },
-     "image": false
+     "image": "capture"
     }
    ],
    "partial": "「최신 OS 기기에서 실행된다」 줄 — 시트 사전 조건에 최신 OS 기기가 아직 없다"
@@ -61,6 +61,16 @@
    "at": "2026-11-10",
    "by": "담당자",
    "text": "최신 OS 기기는 나중에 시트 사전 조건에 적는다 — 적히면 그 기기로 「최신 OS」 checkpoint(device 조건)를 더하고 partial 을 뺀다. 기기별로 따로 돌린 결과는 덮어쓰지 않고 줄마다 합친다"
+  },
+  {
+   "at": "2026-11-10",
+   "by": "담당자",
+   "text": "결과 칸에 캡처를 올린다 — 로비 채점 지점은 그림 비교 없이 캡처만 남긴다(image: capture). 담당자 칸에는 테스트를 돌린 계정을 적는다"
+  },
+  {
+   "at": "2026-11-10",
+   "by": "담당자",
+   "text": "결과 칸에는 실행 기록(시각 · 실행자 · 기기 · 실행 폴더)은 없어도 된다 — 캡처만 둔다"
   }
  ],
  "createdBy": "",

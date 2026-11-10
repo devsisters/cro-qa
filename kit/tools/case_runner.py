@@ -188,6 +188,8 @@ def validate(suite):
                             raise ValueError(f'order.sameAs 「{item["sameAs"]}」 는 이 checkpoint 보다 앞에 있어야 한다')
                     for sel in s.get('mask', []):
                         qc.normalize(sel)
+                    if s.get('image', True) not in (True, False, 'capture'):
+                        raise ValueError('image 는 true(캡처·비교) · false(캡처 안 함) · "capture"(캡처만, 비교 안 함)')
                     if 'device' in s:
                         dc = s['device']
                         if not isinstance(dc, dict) or not dc or any(k not in ('aos', 'ios') for k in dc):
@@ -507,6 +509,11 @@ class Runner:
         cp['tree'] = tree_path
         if not all(c['ok'] for c in cp['checks']):
             cp['verdict'] = 'FAIL'
+            return cp
+        if s.get('image') == 'capture':
+            # 캡처만 남기고 그림 비교는 하지 않는다(로비처럼 매번 달라지는 화면 — 판정은 조건으로만)
+            cp['baseline'] = 'off'
+            cp['verdict'] = 'PASS'
             return cp
         # 시나리오 채점표 지점(scenario_run 이 붙인다): 채점은 조건(expect)으로 하고, 화면 비교는 켠 지점만 한다
         if s.get('scoring'):

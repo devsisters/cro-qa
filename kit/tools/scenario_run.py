@@ -4,7 +4,7 @@
   python3 tools/scenario_run.py <시나리오.json> [<시나리오.json> ...] --platform ios|aos [--check]
                                 [--preset NAME] [--relaunch] [--allow-spend] [--allow-time] [--device ID] [--out DIR]
 
-시나리오의 case(단계)를 케이스 하나로, 여러 파일이면 한 묶음으로 모아 임시 묶음 파일(runs/_scenario-suite.json)을 만든다.
+시나리오의 case(단계)를 케이스 하나로, 여러 파일이면 한 묶음으로 모아 임시 묶음 파일(runs/_scenario-suite-<플랫폼>.json)을 만든다.
 케이스 id 는 TC 키다. checkpoint 의 정답(채점표)은 scenarios/<탭>/<키>/<플랫폼>/ 에서 찾는다(tools/scenario_capture.py 가 만든다).
 돌린 뒤 마지막 결과(판정·지점별 판정·실행 폴더)를 이 컴퓨터에만 적는다 — workspace/scenario-runs/<탭>/<키>.json.
 실행 폴더(runs/)는 공유하지 않으므로 마지막 결과도 시나리오 파일(공유)에 넣지 않는다.
@@ -77,7 +77,7 @@ def main():
     a, rest = ap.parse_known_args()
     suite = build_suite(a.files)
     os.makedirs(qc.RUNS, exist_ok=True)
-    tmp = os.path.join(qc.RUNS, '_scenario-suite.json')
+    tmp = os.path.join(qc.RUNS, f'_scenario-suite-{a.platform or "check"}.json')   # 플랫폼마다 따로 — 두 기기를 동시에 돌린다
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(suite, f, ensure_ascii=False, indent=1)
     out = None
