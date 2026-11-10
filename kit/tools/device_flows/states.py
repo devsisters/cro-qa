@@ -51,7 +51,7 @@ def _open(env, mid):
 
 
 LOCK_FILE = os.path.join(os.path.dirname(TOOLS), 'workspace', 'macaron.lock')
-LOCK_WAIT = 600   # 초 — 다른 기기의 마카롱 단계 하나는 보통 10~30초
+LOCK_WAIT = 600   # 초 — 마카롱 단계 하나는 계정 문서가 크면 1~2분(8.4MB 문서를 편집기에 올리는 데 91초, 2026-11-10 측정)
 
 
 @contextlib.contextmanager
@@ -74,6 +74,7 @@ def _session(env, mid):
                 if time.time() > deadline:
                     raise FlowFailure('BRIDGE', 'macaron lock', f'{LOCK_WAIT}초 동안 다른 실행이 마카롱을 놓지 않았다 — 멈춘 실행이 있는지 본다')
                 time.sleep(1)
+        print('마카롱 차례 — 계정 문서를 여는 중(큰 문서는 1~2분)', flush=True)
         try:
             target = _open(env, mid)
             try:
@@ -82,6 +83,7 @@ def _session(env, mid):
                 _run(['node', ASIDE, 'close', target])
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
+            print('마카롱 끝 — 다음 기기 차례', flush=True)
 
 
 def set_field(env, mid, path, value, out_dir, expect=None):
