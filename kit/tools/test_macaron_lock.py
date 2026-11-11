@@ -59,6 +59,8 @@ class PeekFirstTest(unittest.TestCase):
             states._run, states._open = orig
         self.assertTrue(info['already'])
         self.assertTrue(any('peek' in c for c in calls))
+        first_open = next(i for i, c in enumerate(calls) if c[:3] == ['node', states.ASIDE, 'open'])
+        self.assertIn(['node', states.ASIDE, 'status'], calls[:first_open], '조회 탭을 열기 전에 키트 Chrome 이 떠 있는지 보지 않았다')
         self.assertIn('https://macaron.gb-qa-1.stove.devspie.com/couchbase_modifier/', [c[3] for c in calls if c[:3] == ['node', states.ASIDE, 'open']])
 
 

@@ -103,6 +103,7 @@ def _session(env, mid):
 def peek(env, mid, path, out_dir):
     """편집기를 열지 않고 조회 API 로 path 값을 본다(1~2초) → {'exists': bool, 'value': …}.
     탭은 문서 없는 마카롱 페이지라 앞으로 가져올 필요도, 다른 기기를 기다릴 필요도 없다(잠금 없음)."""
+    _ensure_chrome()
     code, data = _run(['node', ASIDE, 'open', f'https://macaron.{env}.stove.devspie.com/couchbase_modifier/'])
     if code or 'targetId' not in data:
         raise FlowFailure('BRIDGE', 'macaron open', f'키트 Chrome 탭을 열지 못했다: {data}')
