@@ -11,7 +11,7 @@
   - 비밀번호 입력이 필요한 명령(`sudo`, Homebrew 설치 스크립트)
   - App Store 설치, 기기 화면에서 누르는 허용·신뢰·설정
   - `gh auth login` 같은 대화형 로그인 — 사람에게 프롬프트에 `! gh auth login` 을 입력하게 한다
-  - 게임(DEBUG 빌드) 설치 — 빌드는 앱 담당자가 따로 전달한다
+  - 게임(DEBUG 빌드 또는 Stage 빌드) 설치 — 빌드는 앱 담당자가 따로 전달한다
 - 비밀번호·토큰·쿠키 값은 묻지도, 출력하지도, 파일에 쓰지도 않는다.
 - 이 저장소에 커밋·push 하지 않는다. `kit/` 의 소스를 고치지 않는다. 설치 중 키트 오류가 나면 고치려 하지 말고 오류 원문과 함께 사람에게 「앱 담당자에게 전달」하라고 알린다.
 - 명령의 성공은 종료 코드로 판정한다. 출력을 `| tail` 로 잘라 성공을 판정하지 않는다.
@@ -123,7 +123,7 @@ cd kit && python3 tools/doctor.py; echo "exit $?"
 
 ## 9. 게임 설치 — 사람
 
-기기에 **DEBUG 빌드**가 깔려 있어야 앱이 게임을 조작한다. 릴리즈·스토어 빌드에는 자동화 연결(AgentBridge)이 없다. 빌드 파일과 설치 방법은 앱 담당자가 따로 전달하므로, Claude 는 빌드를 찾거나 만들지 않는다. 사람에게 「앱 담당자에게 받은 DEBUG 빌드를 기기에 설치해 달라」고 요청한다.
+기기에 **DEBUG 빌드**나 자동화 연결을 넣은 **Stage 빌드**(Android Release·iOS AdHoc)가 깔려 있어야 앱이 게임을 조작한다. Real·스토어 빌드에는 자동화 연결(AgentBridge)이 없다. iOS Stage 빌드는 앱 「기기」 탭 iOS 줄의 빌드를 「Stage (AdHoc)」로 고른다. 빌드 파일과 설치 방법은 앱 담당자가 따로 전달하므로, Claude 는 빌드를 찾거나 만들지 않는다. 사람에게 「앱 담당자에게 받은 DEBUG 빌드(또는 Stage 빌드)를 기기에 설치해 달라」고 요청한다.
 
 설치됐다고 하면 확인한다(기기마다):
 
@@ -132,11 +132,11 @@ cd kit && python3 tools/gb_device.py launch --platform ios --device <ID> --check
 python3 tools/doctor.py --ping; echo "exit $?"
 ```
 
-- Android 는 `--platform android`.
+- Android 는 `--platform android`. iOS Stage AdHoc 빌드는 `--bundle stage` 를 붙인다.
 - `launch` 가 `Locked` 오류면 사람에게 iPad 잠금 해제를 요청한다.
-- `--ping` 의 「브리지」 줄이 FAIL 이고 ping 결과가 exit 4 면 릴리즈 빌드다 — DEBUG 빌드를 다시 받아야 한다.
+- `--ping` 의 「브리지」 줄이 FAIL 이고 ping 결과가 exit 4 면 자동화 연결이 없는 빌드다(Real·스토어 빌드) — DEBUG 빌드나 Stage 빌드를 다시 받아야 한다.
 - 게임 첫 실행의 리소스 다운로드는 수십 분 걸릴 수 있다.
-- `testmode`(맵 목록·되감기) 명령에 `{"ok": false, "error": "unknown cmd"}` 가 나오면 설치된 DEBUG 빌드가 되감기(AutoRewind)를 지원하지 않는 오래된 빌드다 — 앱 담당자에게 최신 DEBUG 빌드를 받는다.
+- `testmode`(맵 목록·되감기) 명령에 `{"ok": false, "error": "unknown cmd"}` 가 나오면 Stage 빌드이거나(되감기는 DEBUG 빌드에만 있다) 되감기(AutoRewind)를 지원하지 않는 오래된 DEBUG 빌드다 — 앱 담당자에게 최신 DEBUG 빌드를 받는다.
 - 앱을 새로 설치한 직후 `bridge unavailable; addresses attempted: …` 가 나오면, 기기에서 앱 아이콘으로 직접 열었기 때문이다. 브리지 환경변수는 `gb_device.py launch`(QA 앱의 실행·되감기 탭 포함)로 띄울 때만 들어간다 — launch 로 다시 띄운다.
 
 ## 10. QA 앱 띄우기

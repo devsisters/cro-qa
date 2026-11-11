@@ -425,6 +425,43 @@ class DeviceTests(DeviceTestCase):
             self.assertEqual(self.invoke('stop', '--platform', 'ios', '--device', 'UDID')[0], 0)
             self.assertEqual(external.call_args.args[-2:], ('--pid', '555'))
 
+    def test_ios_bundle_choice_launches_that_build(self):
+        # 한 기기에 사내 빌드와 Stage AdHoc 빌드가 같이 깔릴 수 있다 — 고른 번들만 띄우고 기록한다
+        cases = [((), {}, device.IOS_BUNDLES['internal']), (('--bundle', 'stage'), {}, 'com.devsisters.gb'),
+                 ((), {'GB_IOS_BUNDLE': 'stage'}, 'com.devsisters.gb'), (('--bundle', 'internal'), {'GB_IOS_BUNDLE': 'stage'}, 'com.devsisters.enterprise.gb')]
+        for extra, environ, bundle in cases:
+            with self.subTest(extra=extra, environ=environ), mock.patch.dict(os.environ, environ, clear=False), \
+                    mock.patch.object(device, 'devicectl', return_value={'result': {'process': {'processIdentifier': 556}}}) as external:
+                if 'GB_IOS_BUNDLE' not in environ:
+                    os.environ.pop('GB_IOS_BUNDLE', None)
+                self.assertEqual(self.invoke('launch', '--platform', 'ios', '--device', 'UDID', *extra)[0], 0)
+                self.assertEqual(external.call_args.args[-1], bundle)
+                self.assertEqual(device.read_state(device.state_path(self.root, 'ios', 'UDID'))['bundle'], bundle)
+        with mock.patch.dict(os.environ, {'GB_IOS_BUNDLE': 'release'}):
+            self.assertEqual(self.invoke('ping', '--platform', 'ios', '--device', 'UDID')[0], 2)
+        self.assertEqual(self.invoke('ping', '--platform', 'ios', '--device', 'UDID', '--bundle', 'com.devsisters.gb')[0], 2)
+
+    def test_ios_app_pids_match_installed_app_path_not_name(self):
+        apps = {'result': {'apps': [{'url': 'file:///private/var/containers/Bundle/Application/B/Cookie%20Run.app/'}]}}
+        processes = {'result': {'runningProcesses': [
+            {'processIdentifier': 11, 'executable': 'file:///private/var/containers/Bundle/Application/A/Cookie%20Run%20(InternalBuild).app/Cookie%20Run%20(InternalBuild)'},
+            {'processIdentifier': 12, 'executable': 'file:///private/var/containers/Bundle/Application/B/Cookie%20Run.app/Cookie%20Run'}]}}
+        with mock.patch.object(device, 'devicectl', side_effect=[apps, processes]) as external:
+            self.assertEqual(device.ios_app_pids(self.root, 'UDID', 'com.devsisters.gb'), [12])
+            self.assertIn('com.devsisters.gb', external.call_args_list[0].args)
+        with mock.patch.object(device, 'devicectl', return_value={'result': {'apps': []}}):
+            with self.assertRaises(device.DeviceError):
+                device.ios_app_pids(self.root, 'UDID', 'com.devsisters.gb')
+
+    def test_successful_external_stderr_can_be_quiet(self):
+        # devicectl 은 성공해도 기기 정보 수십 줄을 stderr 로 낸다 — 성공이면 숨기고 실패면 보인다
+        for code, quiet, shown in ((0, True, False), (0, False, True), (1, True, True)):
+            with self.subTest(code=code, quiet=quiet):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    device.run([sys.executable, '-c', f'import sys; sys.stderr.write("noise"); sys.exit({code})'], check=False, quiet_success=quiet)
+                self.assertEqual('noise' in err.getvalue(), shown)
+
     def test_build_commands_log_exit_and_artifact(self):
         for platform in ('mac', 'android', 'ios'):
             with self.subTest(platform=platform):

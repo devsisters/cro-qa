@@ -29,6 +29,8 @@ import uuid
 
 ADB = '/opt/homebrew/bin/adb'
 BUNDLE = 'com.devsisters.enterprise.gb'
+# --bundle: internal 은 사내(InternalBuild) 빌드, stage 는 Stage 서버 AdHoc 빌드. build·install 은 internal 만 만든다
+IOS_BUNDLES = {'internal': BUNDLE, 'stage': 'com.devsisters.gb'}
 PACKAGE = 'com.devsisters.gb'
 PROFILE_UUID = '5e40f5f6-6182-4689-a787-e80f35449f7f'
 PROFILE_NAME = 'iOS Team Provisioning Profile: ' + BUNDLE
@@ -88,6 +90,8 @@ def parser():
         sub.add_argument('--port', type=int, default=17880)
         sub.add_argument('--host')
         sub.add_argument('--timeout', type=positive, default=10.0)
+        sub.add_argument('--bundle', default=os.environ.get('GB_IOS_BUNDLE') or 'internal',
+                         help='iOS 게임 빌드: ' + ' · '.join(IOS_BUNDLES) + ' (기본 GB_IOS_BUNDLE 또는 internal)')
         if op == 'serve':
             sub.add_argument('--queue', required=True)
         if op == 'install':
@@ -150,6 +154,8 @@ def validate(args):
         raise DeviceError(2, 'invalid device identifier')
     if args.platform != 'mac' and args.op not in ('serve', 'devices', 'build') and not args.device:
         raise DeviceError(2, '--device is required for android/ios')
+    if args.bundle not in IOS_BUNDLES:
+        raise DeviceError(2, '--bundle must be one of ' + ', '.join(IOS_BUNDLES))
     if args.op == 'os-tap' and args.platform != 'android':
         raise DeviceError(2, 'os-tap is android only')
     if args.op == 'tap':
@@ -169,7 +175,7 @@ def validate(args):
     return args
 
 
-def run(command, *, timeout=60, env=None, cwd=None, stdout=None, check=True, merge_stderr=True):
+def run(command, *, timeout=60, env=None, cwd=None, stdout=None, check=True, merge_stderr=True, quiet_success=False):
     try:
         proc = subprocess.Popen([str(item) for item in command], shell=False, start_new_session=True,
                               env=env, cwd=cwd,
@@ -189,7 +195,7 @@ def run(command, *, timeout=60, env=None, cwd=None, stdout=None, check=True, mer
                               killed_process_group=True) from exc
     except OSError as exc:
         raise DeviceError(3, str(exc)) from exc
-    if errors:
+    if errors and not (quiet_success and proc.returncode == 0):
         print(redact(errors.decode('utf-8', errors='replace').rstrip()), file=sys.stderr)
     if check and proc.returncode:
         raise DeviceError(3, 'external command failed: ' + str(command[0]), exit=proc.returncode)
@@ -229,7 +235,7 @@ def apple_env(root):
 
 def devicectl(root, *arguments, timeout=120):
     raw = text_run(['xcrun', 'devicectl', *arguments, '--json-output', '-'],
-                   env=apple_env(root), timeout=timeout)
+                   env=apple_env(root), timeout=timeout, quiet_success=True)
     try:
         return strict_json(raw)
     except ValueError as exc:
@@ -665,45 +671,50 @@ def launch(args):
         if re.search(r'(?im)^\s*(error|exception)', output):
             raise DeviceError(3, 'am start failed: ' + output.strip())
         return {'ok': True, 'activity': activities[0]}
+    bundle = IOS_BUNDLES[args.bundle]
     atomic_json(state_path(root, 'ios', args.device), {'token': token, 'port': args.port})
     if getattr(args, 'console_log', None):
-        return launch_ios_console(args, root, environment, token)
+        return launch_ios_console(args, root, environment, token, bundle)
     result = devicectl(root, 'device', 'process', 'launch', '--device', args.device,
-                       '--terminate-existing', '--environment-variables', json.dumps(environment), BUNDLE)
+                       '--terminate-existing', '--environment-variables', json.dumps(environment), bundle)
     pids = [value for key, value in walk(result) if key in ('processIdentifier', 'pid') and type(value) is int]
     if not pids:
         raise DeviceError(3, 'iOS launch returned no PID; cannot track stop', result=result)
-    atomic_json(state_path(root, 'ios', args.device), {'pid': pids[0], 'bundle': BUNDLE, 'token': token, 'port': args.port})
+    atomic_json(state_path(root, 'ios', args.device), {'pid': pids[0], 'bundle': bundle, 'token': token, 'port': args.port})
     return {'ok': True, 'pid': pids[0], 'result': result}
 
 
-def ios_app_pids(root, device):
+def ios_app_pids(root, device, bundle):
+    # 빌드마다 .app 이름이 다르다(InternalBuild·AdHoc) — 이름 대신 그 번들이 설치된 경로로 찾는다
+    apps = (devicectl(root, 'device', 'info', 'apps', '--device', device, '--bundle-id', bundle).get('result') or {}).get('apps') or []
+    urls = [str(app.get('url')) for app in apps if app.get('url')]
+    if not urls:
+        raise DeviceError(3, bundle + ' is not installed on the device')
     data = devicectl(root, 'device', 'info', 'processes', '--device', device)
     pids = []
     for process in (data.get('result') or {}).get('runningProcesses', []):
         executable = str(process.get('executable', ''))
-        if 'Cookie%20Run%20(InternalBuild).app' in executable or 'Cookie Run (InternalBuild).app' in executable:
-            if type(process.get('processIdentifier')) is int:
-                pids.append(process['processIdentifier'])
+        if any(executable.startswith(url) for url in urls) and type(process.get('processIdentifier')) is int:
+            pids.append(process['processIdentifier'])
     return pids
 
 
-def launch_ios_console(args, root, environment, token):
+def launch_ios_console(args, root, environment, token, bundle):
     # --console 은 앱이 끝날 때까지 붙어 있어야 출력이 온다. 이 프로세스를 끊으면 앱도 SIGINT 로 끝난다
     log_path = Path(args.console_log).expanduser().resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    before = set(ios_app_pids(root, args.device))
+    before = set(ios_app_pids(root, args.device, bundle))
     stream = open(log_path, 'ab')
     console = subprocess.Popen(['xcrun', 'devicectl', 'device', 'process', 'launch', '--console', '--device', args.device,
-                                '--terminate-existing', '--environment-variables', json.dumps(environment), BUNDLE],
+                                '--terminate-existing', '--environment-variables', json.dumps(environment), bundle],
                                stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT,
                                env=apple_env(root), start_new_session=True)
     stream.close()
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        fresh = [pid for pid in ios_app_pids(root, args.device) if pid not in before]
+        fresh = [pid for pid in ios_app_pids(root, args.device, bundle) if pid not in before]
         if fresh:
-            atomic_json(state_path(root, 'ios', args.device), {'pid': fresh[0], 'bundle': BUNDLE, 'token': token,
+            atomic_json(state_path(root, 'ios', args.device), {'pid': fresh[0], 'bundle': bundle, 'token': token,
                                                                  'port': args.port, 'consolePid': console.pid})
             return {'ok': True, 'pid': fresh[0], 'consolePid': console.pid, 'consoleLog': str(log_path)}
         if console.poll() is not None:

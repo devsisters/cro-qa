@@ -8,7 +8,6 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const kit = require('./kit');
 
-const BUNDLE = 'com.devsisters.enterprise.gb';
 const PACKAGE = 'com.devsisters.gb';
 
 function sh(cmd, args, { timeout = 20000, env } = {}) {
@@ -209,12 +208,14 @@ async function checkGit(table) {
   return out;
 }
 
-/** 기기에 게임(DEBUG 빌드)이 깔렸는지. 기기가 저장돼 있을 때만 본다. */
+/** 기기에 게임(DEBUG 빌드 또는 Stage 빌드)이 깔렸는지. 기기가 저장돼 있을 때만 본다. */
 async function checkGameApps() {
   const devices = kit.readDevices();
   const out = [];
   const ios = (devices.ios || {}).device;
   if (ios) {
+    const stage = devices.ios.bundle === 'stage';
+    const BUNDLE = kit.IOS_BUNDLES[devices.ios.bundle] || kit.IOS_BUNDLES.internal;
     const tmp = path.join(os.tmpdir(), `qa-apps-${process.pid}-${Date.now()}.json`);
     const r = await sh('xcrun', ['devicectl', 'device', 'info', 'apps', '--device', ios, '--bundle-id', BUNDLE, '--json-output', tmp], { timeout: 40000 });
     const apps = (((kit.readJson(tmp, {}) || {}).result || {}).apps) || [];
@@ -223,7 +224,7 @@ async function checkGameApps() {
     out.push({
       id: 'gameIos', title: 'iOS 기기의 게임 앱', need: 'iOS', status: ok ? 'OK' : (r.code === 0 ? 'FAIL' : 'WARN'),
       detail: ok ? `${apps[0].name || BUNDLE} ${apps[0].bundleVersion || ''}`.trim() : (r.code === 0 ? `${BUNDLE} 없음` : `기기 조회 실패: ${lastLine(r.err).slice(-120)}`),
-      fix: ok ? '' : (r.code === 0 ? 'CI(Cookiepot)의 DEBUG(InternalBuild) 빌드를 설치한다. 릴리즈 빌드에는 자동화 연결이 없다' : '기기가 잠겨 있거나 연결이 끊겼다. 잠금을 풀고 「다시 점검」'),
+      fix: ok ? '' : (r.code === 0 ? (stage ? 'Stage AdHoc 빌드를 설치하거나, 기기 탭에서 빌드를 「사내(InternalBuild)」로 바꾼다' : 'CI(Cookiepot)의 DEBUG(InternalBuild) 빌드를 설치하거나, Stage AdHoc 빌드면 기기 탭에서 빌드를 「Stage(AdHoc)」로 바꾼다') + '. Real·스토어 빌드에는 자동화 연결이 없다' : '기기가 잠겨 있거나 연결이 끊겼다. 잠금을 풀고 「다시 점검」'),
       actions: [],
     });
   }
@@ -234,7 +235,7 @@ async function checkGameApps() {
     out.push({
       id: 'gameAos', title: 'Android 기기의 게임 앱', need: 'Android', status: ok ? 'OK' : (r.code === 0 || /not found|no devices/.test(r.err) ? 'FAIL' : 'WARN'),
       detail: ok ? `${PACKAGE} 설치됨` : (r.code === 0 ? `${PACKAGE} 없음` : lastLine(r.err).slice(-120)),
-      fix: ok ? '' : 'CI(Cookiepot)의 DEBUG 빌드 APK 를 설치한다. 기기가 unauthorized 면 기기 화면의 「USB 디버깅 허용」을 누른다',
+      fix: ok ? '' : 'CI(Cookiepot)의 DEBUG 빌드나 Stage 빌드 APK 를 설치한다. 기기가 unauthorized 면 기기 화면의 「USB 디버깅 허용」을 누른다',
       actions: [],
     });
   }

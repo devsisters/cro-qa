@@ -130,8 +130,14 @@ function writePresets(presets) {
   writeJson(presetsFile(), presets);
 }
 
+// iOS 게임 빌드 종류 → 번들. gb_device.py IOS_BUNDLES 와 같아야 한다
+const IOS_BUNDLES = { internal: 'com.devsisters.enterprise.gb', stage: 'com.devsisters.gb' };
+
 function readDevices() {
-  return readJson(P.devices, { ios: { platform: 'ios', device: '' }, aos: { platform: 'android', device: '' } });
+  const devices = readJson(P.devices, { ios: { platform: 'ios', device: '' }, aos: { platform: 'android', device: '' } });
+  devices.ios = Object.assign({ platform: 'ios', device: '' }, devices.ios);
+  if (!IOS_BUNDLES[devices.ios.bundle]) devices.ios.bundle = 'internal';
+  return devices;
 }
 
 function writeDevices(devices) {
@@ -141,6 +147,7 @@ function writeDevices(devices) {
       current[key] = Object.assign({}, current[key], { device: devices[key].device.trim() });
     }
   }
+  if (devices.ios && IOS_BUNDLES[devices.ios.bundle]) current.ios.bundle = devices.ios.bundle;
   writeJson(P.devices, current);
   return current;
 }
@@ -166,6 +173,7 @@ function toolEnv() {
   return Object.assign({}, process.env, {
     PATH: [...extra, process.env.PATH || ''].join(':'),
     DEVELOPER_DIR: settings.developerDir,
+    GB_IOS_BUNDLE: readDevices().ios.bundle,
     PYTHONUNBUFFERED: '1',
   });
 }
@@ -330,6 +338,6 @@ function spawnRunner(args, { platform, relaunch, actionCapture, settings, kind }
 
 module.exports = {
   P, readJson, writeJson, listCases, readCase, writeCase, listRuns, readRun, runDir,
-  readPresets, writePresets, readDevices, writeDevices, readSettings, writeSettings, toolEnv, gbDevice, startRunner,
+  IOS_BUNDLES, readPresets, writePresets, readDevices, writeDevices, readSettings, writeSettings, toolEnv, gbDevice, startRunner,
   parseIosDevices, parseAdbDevices, discoverDevices, scenarioRoot, casesDir, presetsFile, caseFile, recordingsDir,
 };

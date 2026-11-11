@@ -26,7 +26,8 @@
 
 ## 4. 게임 빌드
 
-- CI(Cookiepot)의 **DEBUG 단계 빌드**를 기기에 설치한다. 릴리즈 빌드에는 자동화 연결(AgentBridge)이 없다
+- CI(Cookiepot)의 **DEBUG 단계 빌드**나 자동화 연결(AgentBridge)을 넣은 **Stage 빌드**를 기기에 설치한다. Real·스토어 빌드에는 없다
+- iOS Stage 빌드는 「기기」 탭 iOS 줄의 빌드를 「Stage (AdHoc)」로 고른다(CLI 는 `--bundle stage`). 인게임 자동 되감기는 DEBUG 빌드에만 있다
 - 빌드가 바뀌면 다시 설치하고 `PROMPTS.md` 4번(회귀)을 돌린다
 
 ## 5. Chrome·Node — 계정 상태·서버 시간 케이스용
@@ -79,5 +80,5 @@ python3 tools/doctor.py --web    # 상태·시간 케이스를 돌릴 때 — �
 | devicectl: `The developer disk image could not be mounted` 경고 | 무시해도 된다(경고). iPad 를 다시 연결하거나 Xcode 를 한 번 연다 |
 | `Locked` | iPad 잠금 해제 |
 | adb 기기가 `unauthorized` | 기기 화면의 USB 디버깅 허용 창을 누른다 |
-| ping exit 4 | DEBUG 빌드가 아니다 |
+| ping exit 4 | 자동화 연결이 없는 빌드다(Real·스토어 빌드, 또는 연결을 넣기 전 Stage 빌드) |
 | 번역 문구가 이상하다 | 첫 리소스 다운로드가 덜 끝났을 수 있다 — 앱 재시작 |

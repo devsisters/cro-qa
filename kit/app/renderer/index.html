@@ -53,7 +53,7 @@
       <table class="grid devices">
         <thead><tr><th>플랫폼</th><th>기기</th><th>게임 연결</th><th></th></tr></thead>
         <tbody>
-          <tr data-platform="ios"><td>iOS</td><td><select class="device-id"></select><div class="device-sub muted"></div></td><td class="device-cell"><span class="device-status muted">-</span><div class="device-hint muted"></div></td><td class="actions"><button class="launch" title="자동화 연결을 켠 채로 게임을 다시 띄운다">연결 모드로 실행</button><button class="ping">연결 확인</button></td></tr>
+          <tr data-platform="ios"><td>iOS</td><td><select class="device-id"></select><div class="device-sub muted"></div><label class="device-build-label muted">빌드 <select class="device-build" title="기기에 깔린 게임 빌드. 같은 기기에 둘 다 있으면 고른 쪽을 띄운다"><option value="internal">사내 (InternalBuild)</option><option value="stage">Stage (AdHoc)</option></select></label></td><td class="device-cell"><span class="device-status muted">-</span><div class="device-hint muted"></div></td><td class="actions"><button class="launch" title="자동화 연결을 켠 채로 게임을 다시 띄운다">연결 모드로 실행</button><button class="ping">연결 확인</button></td></tr>
           <tr data-platform="aos"><td>Android</td><td><select class="device-id"></select><div class="device-sub muted"></div></td><td class="device-cell"><span class="device-status muted">-</span><div class="device-hint muted"></div></td><td class="actions"><button class="launch" title="자동화 연결을 켠 채로 게임을 다시 띄운다">연결 모드로 실행</button><button class="ping">연결 확인</button></td></tr>
         </tbody>
       </table>

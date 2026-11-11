@@ -126,7 +126,11 @@ function fillDeviceSelect(tr, found, saved) {
 
 async function saveDeviceSelection() {
   const devices = {};
-  for (const tr of deviceRows()) devices[tr.dataset.platform] = { device: $('.device-id', tr).value };
+  for (const tr of deviceRows()) {
+    devices[tr.dataset.platform] = { device: $('.device-id', tr).value };
+    const build = $('.device-build', tr);
+    if (build) devices[tr.dataset.platform].bundle = build.value;
+  }
   await qa.devicesWrite(devices);
 }
 
@@ -137,7 +141,11 @@ async function discoverDevices() {
     try {
       const [found, saved] = await Promise.all([qa.devicesDiscover(), qa.devicesRead()]);
       let changed = false;
-      for (const tr of deviceRows()) changed = fillDeviceSelect(tr, found[tr.dataset.platform] || [], (saved[tr.dataset.platform] || {}).device || '') || changed;
+      for (const tr of deviceRows()) {
+        changed = fillDeviceSelect(tr, found[tr.dataset.platform] || [], (saved[tr.dataset.platform] || {}).device || '') || changed;
+        const build = $('.device-build', tr);
+        if (build && document.activeElement !== build) build.value = (saved[tr.dataset.platform] || {}).bundle || 'internal';
+      }
       if (changed) await saveDeviceSelection();
       const n = (found.ios || []).filter((d) => d.connected).length + (found.aos || []).filter((d) => d.connected).length;
       const errs = Object.entries(found.errors || {}).map(([k, v]) => `${k === 'aos' ? 'Android' : 'iOS'} 조회 실패: ${v}`);
@@ -169,6 +177,8 @@ deviceRows().forEach((tr) => $('.device-id', tr).addEventListener('change', asyn
   setDeviceState(tr, '-', 'muted');
   if ($('.device-id', tr).value) pingRow(tr);
 }));
+// 빌드를 바꾸면 이미 떠 있는 앱은 그대로다 — 「연결 모드로 실행」으로 고른 빌드를 다시 띄운다
+deviceRows().forEach((tr) => { const build = $('.device-build', tr); if (build) build.addEventListener('change', async () => { await saveDeviceSelection(); setDeviceState(tr, '빌드를 바꿨다 · 「연결 모드로 실행」', 'muted'); }); });
 // 꽂고 빼는 것을 따라가도록 기기 탭을 보는 동안 15초마다 다시 찾는다
 setInterval(() => { if ($('#tab-devices').classList.contains('active') && !document.hidden) discoverDevices(); }, 15000);
 $('#saveSettings').addEventListener('click', async () => {

@@ -51,3 +51,20 @@ test('adb 목록은 state 가 device 인 것만 연결로 본다', () => {
   const list = kit.parseAdbDevices(text);
   assert.deepStrictEqual(list.map((d) => [d.id, d.name, d.connected]), [['R3CW909TLSM', 'SM S921B', true], ['ZX1', 'ZX1', false]]);
 });
+
+test('iOS 빌드 종류는 정한 값만 저장하고 도구 환경으로 넘긴다', (t) => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qa-devices-'));
+  const real = kit.P.devices;
+  kit.P.devices = path.join(dir, 'devices.json');
+  t.after(() => { kit.P.devices = real; fs.rmSync(dir, { recursive: true, force: true }); });
+  assert.strictEqual(kit.readDevices().ios.bundle, 'internal');
+  kit.writeDevices({ ios: { device: 'UDID', bundle: 'stage' }, aos: { device: 'SERIAL' } });
+  assert.deepStrictEqual([kit.readDevices().ios.device, kit.readDevices().ios.bundle], ['UDID', 'stage']);
+  assert.strictEqual(kit.toolEnv().GB_IOS_BUNDLE, 'stage');
+  kit.writeDevices({ ios: { device: 'UDID', bundle: 'release' } });
+  assert.strictEqual(kit.readDevices().ios.bundle, 'stage');
+  assert.deepStrictEqual(Object.keys(kit.IOS_BUNDLES), ['internal', 'stage']);
+});

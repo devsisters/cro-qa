@@ -14,7 +14,8 @@ Claude 작업 지침은 `CLAUDE.md`, 케이스 형식은 `cases/README.md`, 정�
 
 ## 알아 둘 것
 
-- 게임은 **DEBUG 빌드**여야 한다(CI Cookiepot debug 단계)
+- 게임은 **DEBUG 빌드**(CI Cookiepot debug 단계)나 자동화 연결을 넣은 **Stage 빌드**(Android Release·iOS AdHoc)여야 한다. Real·스토어 빌드에는 없다. iOS Stage 빌드는 「기기」 탭 iOS 줄의 빌드를 「Stage (AdHoc)」로 고른다(CLI 는 `--bundle stage`)
+- 인게임 자동 되감기(`autorewind`·`testmode`)는 DEBUG 빌드에만 있다
 - 정답지는 **사람이 승인한 화면**이다. 첫 실행은 시트 기대 조건으로만 판정되고, 승인한 뒤부터 화면 비교가 붙는다
 - 「통과」는 자동 판정이다. 소리·손맛·연출 품질은 사람이 본다(미실행으로 표시된다)
 - 결제·계정 연동·로그아웃·선택 동의는 누르지 않는다. 재화를 쓰는 케이스는 허락할 때만 돈다

@@ -18,7 +18,7 @@
 
 ## 0. 동작 원리 — 먼저 이해할 것
 
-- 게임 **DEBUG 빌드**에는 AgentBridge 가 들어 있다. 게임이 자기 UI 트리(노드 이름·화면 글자·위치·누를 수 있는지·덮였는지)를 JSON 으로 내보내고, 이름으로 누르는 터치를 받는다. 화면을 이미지로 짐작하지 않는다.
+- 게임 **DEBUG 빌드**와 Real 이 아닌 **Stage 빌드**(빌드 머신이 넣는다)에는 AgentBridge 가 들어 있다. Stage 빌드에는 자동 되감기(`autorewind`·`testmode`)가 없다. 게임이 자기 UI 트리(노드 이름·화면 글자·위치·누를 수 있는지·덮였는지)를 JSON 으로 내보내고, 이름으로 누르는 터치를 받는다. 화면을 이미지로 짐작하지 않는다.
 - 기기 조작은 전부 `tools/gb_device.py` 로 한다. 케이스 실행기와 플로우 라이브러리도 이 도구를 거친다.
 - **판정은 모델보다 트리가 먼저다.** 이미지로만 판단한 「결함 의심」은 샘플 작업에서 5건 모두 오판이었다. 트리로 판정할 수 있는 것은 트리로 판정하고, 이미지 비교는 레이아웃·그림 확인에만 쓴다.
 - 사람의 맥 마우스·키보드와 충돌하지 않는다. 입력은 게임 안으로 들어간다.
@@ -30,8 +30,9 @@
 | 확인 | 안 되면 |
 |---|---|
 | `tools/device_flows/devices.json` 의 `ios.device`(devicectl Identifier/UDID)·`aos.device`(adb serial) | doctor 출력의 기기 ID 를 넣는다 |
-| 앱 설치 | 사람이 CI(Cookiepot) **DEBUG 단계 빌드**를 설치한다. 이 키트는 앱을 빌드·설치하지 않는다 |
-| 브리지 | `python3 tools/gb_device.py launch --platform ios --device <ID> --checkout "$PWD/workspace"` 후 `python3 tools/doctor.py --ping` 이 OK. `ping` 이 exit 4 면 릴리즈 빌드다 → DEBUG 빌드를 요청한다 |
+| 앱 설치 | 사람이 CI(Cookiepot) **DEBUG 단계 빌드**나 자동화 연결을 넣은 **Stage 빌드**를 설치한다. 이 키트는 앱을 빌드·설치하지 않는다 |
+| iOS 빌드 종류 | 사내(InternalBuild)는 기본값, Stage AdHoc 은 `--bundle stage`(또는 `GB_IOS_BUNDLE=stage`, QA 앱은 기기 탭의 「빌드」). 한 기기에 둘 다 있으면 고른 쪽을 띄운다 |
+| 브리지 | `python3 tools/gb_device.py launch --platform ios --device <ID> --checkout "$PWD/workspace"` 후 `python3 tools/doctor.py --ping` 이 OK. `ping` 이 exit 4 면 자동화 연결이 없는 빌드다(Real·스토어 빌드) → DEBUG 빌드나 Stage 빌드를 요청한다 |
 | iPad 잠금 | `launch` 가 `Locked` 오류면 사람에게 잠금 해제를 요청한다(자동 잠금 「안 함」 권장). 비밀번호는 다루지 않는다 |
 | 프리셋(서버) | 첫 화면 「프리셋 환경설정」에서 고를 이름. 케이스 파일 `preset` 에 넣는다. 모르면 사람에게 묻는다 |
 
