@@ -36,7 +36,7 @@ def main():
     ap.add_argument('--out')
     ap.add_argument('--no-pull', action='store_true', help='재화를 쓰는 뽑기 단계를 건너뛴다')
     ap.add_argument('--relaunch', action='store_true', help='앱을 새로 띄워 같은 시작 상태(프리셋 화면)에서 시작한다')
-    ap.add_argument('--states', action='store_true', help='마카롱으로 계정 상태를 바꿔 보는 단계를 켠다(Aside 로그인 필요)')
+    ap.add_argument('--states', action='store_true', help='마카롱으로 계정 상태를 바꿔 보는 단계를 켠다')
     ap.add_argument('--preset', help='프리셋 화면에서 고를 프리셋 이름(기본 routes.PRESET)')
     ap.add_argument('--list', action='store_true')
     a = ap.parse_args()

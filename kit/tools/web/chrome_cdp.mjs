@@ -1,17 +1,15 @@
 #!/usr/bin/env node
-// chrome_cdp.mjs — QA 키트 전용 Chrome 창(별도 프로필)을 원격 디버깅(CDP)으로 조작한다. 사내 dev 웹 두 곳만 쓴다:
-//   · 마카롱(couchbase_modifier) — 테스트 계정 상태 조회·변경. 쓰기는 macaron_edit.py 를 거친다(백업·기대값·확인 창 대조·저장 뒤 비교)
+// chrome_cdp.mjs — QA 키트 전용 Chrome 창(별도 프로필)을 원격 디버깅(CDP)으로 조작한다. 사내 dev 웹 하나만 쓴다:
 //   · 타임머신(stove.devspie.com/app/timemachine) — dev 서버(gb-*) 시간 조회·변경. timemachine.py 를 거친다
 //
 // 별도 프로필(workspace/chrome-profile)로 띄운다 — 평소 쓰는 Chrome 과 로그인·쿠키가 섞이지 않고, Chrome 은 기본 프로필에서
-// 원격 디버깅을 막는다. 처음 한 번 사람이 이 창에서 stove·마카롱에 로그인하고 인증서 경고(고급 → 계속)를 넘긴다.
+// 원격 디버깅을 막는다. 처음 한 번 사람이 이 창에서 stove 에 로그인한다. 마카롱(계정 상태)은 macaron_api.py 가 브라우저 없이 부른다.
 //
-// 이 도구가 하지 않는 것: 쿠키·스토리지·토큰 읽기, 임의 클릭·입력. 마카롱 Delete 는 절대 누르지 않는다.
+// 이 도구가 하지 않는 것: 쿠키·스토리지·토큰 읽기, 임의 클릭·입력.
 // 위험: 포트가 열려 있는 동안은 이 맥의 다른 프로세스도 이 창을 조작할 수 있다. 127.0.0.1 에만 연다. 다 쓰면 창을 닫는다.
 //
 //   node chrome_cdp.mjs status | launch | open <url> | activate <targetId> | read <targetId> [--chars N] [--selector CSS]
 //   node chrome_cdp.mjs shot <targetId> <out.png> | close <targetId>
-//   node chrome_cdp.mjs macaron-api-get|macaron-lookup|macaron-get|macaron-replace|macaron-save|macaron-confirm …   (macaron_edit.py 가 부른다)
 //   node chrome_cdp.mjs page-text <url> [--wait ms]   새 탭으로 열어 본문을 읽고 닫는다(타임머신 응답 읽기용)
 import { execFileSync, spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -110,147 +108,8 @@ try {
     s.close(); writeFileSync(args[1], Buffer.from(r.result.data, 'base64')); out({ saved: args[1] });
   } else if (cmd === 'close') {
     const r = await fetch(`${BASE}/json/close/${args[0]}`); out({ closed: r.ok });
-  } else if (cmd === 'macaron-lookup') {
-    const [target, bucket, key] = args;
-    if (!target || !bucket || !key) throw new Error('macaron-lookup <targetId> <bucket> <key>');
-    const s = await session(target);
-    const chars = Number(opt('--chars', 4000));
-    // 조회 한 동작만 한다. 누르는 요소를 `.search-button` 으로 고정하고, 그 요소가 Save/Delete 계열이면 멈춘다.
-    const act = `(() => {
-      if (!location.pathname.includes('/couchbase_modifier')) return {error: '마카롱 couchbase_modifier 탭이 아니다: ' + location.href};
-      const sel = document.querySelector('select[name=bucket]'), inp = document.querySelector('input[name=key]');
-      const btn = document.querySelector('button.search-button');
-      if (!sel || !inp || !btn) return {error: '조회 요소를 못 찾았다(bucket/key/search-button)'};
-      if (btn.matches('.btn-success,.btn-danger') || /save|delete/i.test(btn.innerText)) return {error: '검색 버튼이 저장/삭제로 보인다 — 멈춘다'};
-      if (![...sel.options].some(o => o.value === ${JSON.stringify(bucket)})) return {error: '없는 버킷: ' + ${JSON.stringify(bucket)}, buckets: [...sel.options].map(o => o.value)};
-      sel.value = ${JSON.stringify(bucket)}; sel.dispatchEvent(new Event('change', {bubbles: true}));
-      inp.value = ${JSON.stringify(key)}; inp.dispatchEvent(new Event('input', {bubbles: true}));
-      btn.click(); return {clicked: 'search-button'}; })()`;
-    const r1 = await s.send('Runtime.evaluate', { expression: act, returnByValue: true });
-    const a1 = r1.result?.result?.value || {};
-    if (a1.error) { s.close(); out(a1); process.exit(5); }
-    await new Promise(r => setTimeout(r, Number(opt('--wait', 2500))));
-    const r2 = await s.send('Runtime.evaluate', { returnByValue: true, expression:
-      `(() => { const v = (window.editor && window.editor.getValue) ? window.editor.getValue() : (window.ace ? ace.edit('editor').getValue() : ''); return { bucket: ${JSON.stringify(bucket)}, key: ${JSON.stringify(key)}, length: v.length, value: v.slice(0, ${chars}) }; })()` });
-    s.close(); out(r2.result?.result?.value ?? r2.result);
-  } else if (cmd === 'macaron-api-get') {
-    // 읽기 전용: 편집기를 거치지 않고 마카롱 페이지가 쓰는 조회 API(/api/couchbase_modifier/get/)로 문서를 받는다.
-    // 편집기는 8.4MB 를 들여쓰기해 올리느라 수십 초가 걸리지만 API 는 1초 안이다. 탭은 같은 dev 마카롱의 아무 페이지면 된다.
-    // 받은 document(압축 JSON 글자)만 파일로 남긴다. 쿠키·토큰은 읽지 않는다(GET 이라 필요 없다).
-    const target = args[0]; const bucket = opt('--bucket'), key = opt('--key'), outFile = opt('--out');
-    if (!target || !bucket || !key || !outFile) throw new Error('macaron-api-get <targetId> --bucket B --key K --out FILE');
-    const s = await session(target);
-    const expr = `(async () => {
-      if (!/^macaron\\.gb-[a-z0-9-]+\\.stove\\.devspie\\.com$/.test(location.host)) return {wait: true, href: location.href};
-      const r = await fetch('/api/couchbase_modifier/get/?bucket=' + encodeURIComponent(${JSON.stringify(bucket)}) + '&key=' + encodeURIComponent(${JSON.stringify(key)}),
-                            {redirect: 'manual'});
-      if (r.status !== 200) return {status: r.status};
-      const d = await r.json();
-      return {status: 200, bucket: d.bucket, key: d.key, type: d.type, document: d.document}; })()`;
-    let v = {};
-    for (let i = 0; i < 20; i++) {   // 막 연 탭은 아직 about:blank 일 수 있다 — 마카롱 주소가 될 때까지 0.5초씩
-      v = (await s.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value || {};
-      if (!v.wait) break;
-      await new Promise(r => setTimeout(r, 500));
-    }
-    s.close();
-    if (v.wait) { out({ ok: false, error: 'dev 마카롱(gb-*) 탭이 아니다', href: v.href }); process.exit(6); }
-    if (v.status !== 200 || typeof v.document !== 'string') {
-      out({ ok: false, status: v.status, error: [401, 403, 0].includes(v.status) || (v.status >= 300 && v.status < 400) ? '마카롱 로그인이 필요하다 — 키트 Chrome 에서 로그인한다' : '조회 실패' });
-      process.exit(5);
-    }
-    writeFileSync(outFile, v.document);
-    out({ ok: true, bucket: v.bucket, key: v.key, type: v.type, length: v.document.length, saved: outFile });
-  } else if (cmd === 'macaron-get') {
-    // 읽기 전용: 이미 조회된 탭(…/couchbase_modifier/?bucket=&key=)의 편집기 전체 내용과 키를 파일로 남긴다.
-    const [target, outFile] = args;
-    if (!target || !outFile) throw new Error('macaron-get <targetId> <out.json>');
-    const s = await session(target);
-    const r = await s.send('Runtime.evaluate', { returnByValue: true, expression:
-      `(() => ({ url: location.href, host: location.host, key: (document.querySelector('input[name=key]')||{}).value,
-                 bucket: (document.querySelector('select[name=bucket]')||{}).value,
-                 text: ace.edit(document.querySelector('.ace_editor')).getValue() }))()` });
-    s.close();
-    const v = r.result?.result?.value;
-    if (!v || !v.text) { out({ ok: false, error: '편집기가 비어 있다 — 조회된 탭이 아니다' }); process.exit(5); }
-    writeFileSync(outFile, v.text);
-    out({ ok: true, url: v.url, bucket: v.bucket, key: v.key, length: v.text.length, saved: outFile });
-  } else if (cmd === 'macaron-replace' || cmd === 'macaron-save') {
-    // 쓰기 — 2026-11-03 사용자 승인(테스트 계정 상태 만들기). gb- 마카롱은 전부 dev 서버이고 계정도 전부 테스트용이라
-    // 서버·계정 제한은 없다(사용자 결정). 아래 조건을 만족할 때만 한다:
-    //  · 주소가 dev 마카롱(macaron.gb-*.stove.devspie.com)의 couchbase_modifier
-    //  · replace: 편집기의 지정 위치 텍스트가 --expect 와 정확히 같을 때만 그 범위만 --new 로 바꾼다(문서 전체를 다시 쓰지 않는다 — int64 보존)
-    //  · save: 누르는 버튼은 `.btn-success` 이면서 글자가 Save 인 것 하나. Delete 는 절대 누르지 않는다
-    // 범위 계산·전후 검증은 macaron_edit.py 가 한다.
-    const target = args[0];
-    const s = await session(target);
-    const guard = `(() => { const key = (document.querySelector('input[name=key]')||{}).value;
-      if (!/^macaron\\.gb-[a-z0-9-]+\\.stove\\.devspie\\.com$/.test(location.host) || !location.pathname.includes('/couchbase_modifier'))
-        return {error: 'dev 마카롱(gb-*) couchbase_modifier 가 아니다: ' + location.href};
-      return {key}; })()`;
-    const g = (await s.send('Runtime.evaluate', { expression: guard, returnByValue: true })).result?.result?.value || {};
-    if (g.error) { s.close(); out({ ok: false, ...g }); process.exit(6); }
-    if (cmd === 'macaron-replace') {
-      const row = Number(opt('--row')), c1 = Number(opt('--col-start')), c2 = Number(opt('--col-end'));
-      const rowEnd = Number(opt('--row-end', String(row)));   // 여러 줄 범위(배열 항목 빼기·넣기)
-      const expect = opt('--expect'), next = opt('--new');
-      if (![row, rowEnd, c1, c2].every(Number.isInteger) || expect == null || next == null) throw new Error('macaron-replace <targetId> --row R --col-start C1 --col-end C2 --expect TEXT --new TEXT');
-      const r = await s.send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
-        const e = ace.edit(document.querySelector('.ace_editor'));
-        // 마카롱의 ace 빌드에는 ace.require 가 없다. 선택 영역 객체의 생성자로 Range 를 만든다.
-        const Range = e.getSelectionRange().constructor;
-        const range = new Range(${row}, ${c1}, ${rowEnd}, ${c2}); const cur = e.session.getTextRange(range);
-        if (cur !== ${JSON.stringify(expect)}) return {error: '현재 텍스트가 기대와 다르다', current: cur};
-        e.session.replace(range, ${JSON.stringify(next)}); return {replaced: cur, with: ${JSON.stringify(next)}}; })()` });
-      s.close();
-      // 페이지 쪽 예외는 value 가 비어 온다 — 성공으로 보지 않는다
-      const v = r.result?.exceptionDetails ? { error: r.result.exceptionDetails.exception?.description || 'exception' }
-                                            : (r.result?.result?.value || { error: 'no result' });
-      if (!v.error && v.replaced === undefined) v.error = '바꾼 결과가 없다';
-      out({ ok: !v.error, key: g.key, ...v }); process.exit(v.error ? 7 : 0);
-    } else {
-      // 1단계: 본문 Save 를 누르면 「Confirm changes」 창이 변경 줄을 보여 준다. 그 텍스트를 돌려준다(아직 저장 안 됨).
-      const modalText = `(() => { const m = [...document.querySelectorAll('.modal')].find(x => getComputedStyle(x).display !== 'none');
-        return m ? m.innerText : null; })()`;
-      const r = await s.send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
-        const b = [...document.querySelectorAll('button.btn-success')].filter(x => x.innerText.trim() === 'Save');
-        if (b.length !== 1) return {error: 'Save 버튼이 정확히 하나가 아니다', count: b.length};
-        b[0].click(); return {clicked: 'Save'}; })()` });
-      const v = r.result?.result?.value || { error: 'no result' };
-      let diff = null;
-      for (let i = 0; i < 20 && !v.error; i++) {
-        await new Promise(r2 => setTimeout(r2, 1500));
-        diff = (await s.send('Runtime.evaluate', { returnByValue: true, expression: modalText })).result?.result?.value;
-        if (diff && /\n.*[^.\s].*\n/.test(diff.replace(/^Confirm changes/, ''))) break;
-      }
-      s.close();
-      if (!v.error && !diff) v.error = '확인 창이 뜨지 않았다';
-      out({ ok: !v.error, key: g.key, ...v, diff });
-      process.exit(v.error ? 7 : 0);
-    }
-  } else if (cmd === 'macaron-confirm') {
-    // 2단계: 확인 창의 텍스트가 --diff-file 내용과 정확히 같을 때만 확인 창의 Save(.btn-primary)를 누른다.
-    const [target] = args; const diffFile = opt('--diff-file');
-    if (!target || !diffFile) throw new Error('macaron-confirm <targetId> --diff-file <검증한 확인 창 텍스트 파일>');
-    const expected = (await import('node:fs')).readFileSync(diffFile, 'utf8');
-    const s = await session(target);
-    const r = await s.send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
-      const key = (document.querySelector('input[name=key]')||{}).value;
-      if (!/^macaron\\.gb-[a-z0-9-]+\\.stove\\.devspie\\.com$/.test(location.host)) return {error: 'dev 마카롱(gb-*)이 아니다'};
-      const m = [...document.querySelectorAll('.modal')].find(x => getComputedStyle(x).display !== 'none');
-      if (!m) return {error: '확인 창이 없다'};
-      if (m.innerText !== ${JSON.stringify(expected)}) return {error: '확인 창 내용이 검증한 것과 다르다', current: m.innerText.slice(0, 500)};
-      const b = [...m.querySelectorAll('button.btn-primary')].filter(x => x.innerText.trim() === 'Save');
-      if (b.length !== 1) return {error: '확인 창 Save 버튼이 정확히 하나가 아니다'};
-      b[0].click(); return {confirmed: true, key}; })()` });
-    await new Promise(r2 => setTimeout(r2, Number(opt('--wait', 4000))));
-    const page = (await s.send('Runtime.evaluate', { returnByValue: true, expression: 'document.body.innerText.slice(0, 3000)' })).result?.result?.value || '';
-    s.close();
-    const v = r.result?.exceptionDetails ? { error: 'exception' } : (r.result?.result?.value || { error: 'no result' });
-    out({ ok: !v.error, ...v, notice: page.match(/(success|fail|error|saved|성공|실패)[^\n]{0,100}/i)?.[0] || null });
-    process.exit(v.error ? 7 : 0);
   } else {
-    console.error('usage: status | launch | activate <targetId> | page-text <url> | open <url> | read <targetId> [--chars N] [--selector CSS] | shot <targetId> <out.png> | close <targetId> | macaron-lookup <targetId> <bucket> <key> | macaron-get <targetId> <out> | macaron-replace … | macaron-save <targetId>');
+    console.error('usage: status | launch | activate <targetId> | page-text <url> | open <url> | read <targetId> [--chars N] [--selector CSS] | shot <targetId> <out.png> | close <targetId>');
     process.exit(2);
   }
 } catch (e) { console.error(String(e.message || e)); process.exit(1); }

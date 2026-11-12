@@ -116,15 +116,16 @@ ERROR(진행 실패) 분류와 할 일:
 
 | 단계 | 하는 일 | 전제 |
 |---|---|---|
-| `{"do": "state", "path": "wallet.….amt", "value": 50}` | 마카롱으로 그 계정의 필드를 바꾸고 디버그 콘솔 「유저 정보 갱신」으로 앱에 반영한다. 되돌리지 않는다(`"restore": true` 일 때만 되돌림). 배열 항목을 빼려면 `{"do": "state", "op": "remove", "path": "inventory.pets.@id=201800", "max_refs": 2}` | 케이스 파일 `server`, 키트 Chrome 로그인(SETUP.md 5장) |
+| `{"do": "state", "path": "wallet.….amt", "value": 50}` | 마카롱으로 그 계정의 필드를 바꾸고 디버그 콘솔 「유저 정보 갱신」으로 앱에 반영한다. 되돌리지 않는다(`"restore": true` 일 때만 되돌림). 배열 항목을 빼려면 `{"do": "state", "op": "remove", "path": "inventory.pets.@id=201800", "max_refs": 2}` | 케이스 파일 `server`(마카롱 API 를 바로 부른다, 브라우저·로그인 없음) |
 | `{"do": "server_time", "to": "+1d"}` 또는 `"2026-11-14 00:00"` | 서버 시간을 바꾸고 앱을 다시 띄워 로비까지 간다. 되돌리지 않는다 | 케이스 파일 `time_ok: true` + 실행기 `--allow-time` + 서버를 같이 쓰는 사람과 합의 |
 
-- 필드 경로는 capnp proto-struct 의 이름을 snake_case 로 쓴 JSON 경로다(예: `wallet.my_cookie_icing_gacha_token.amt`). 모르면 `python3 tools/macaron_edit.py get <경로> --target <탭>` 으로 먼저 읽어 본다. 숫자·문자열 같은 **잎 값만** 바꾼다
+- 필드 경로는 capnp proto-struct 의 이름을 snake_case 로 쓴 JSON 경로다(예: `wallet.my_cookie_icing_gacha_token.amt`). 모르면 `python3 tools/macaron_edit.py peek <경로> --env <서버> --key member:<MID>` 로 먼저 읽어 본다(1초 안팎)
 - MID 는 화면의 「MID : …」 라벨에서 읽는다(케이스 파일 `mid` 로 고정할 수도 있다)
 - 직접 확인: `python3 tools/timemachine.py get <서버>`, `python3 tools/timemachine.py set <서버> +1d --reason <케이스>`(기록은 `workspace/timemachine-log.jsonl`)
-- 마카롱 **Delete 는 누르지 않는다**. 도구도 누르지 않는다
-- 키트 Chrome(포트 9444)이 꺼져 있으면 마카롱 단계가 `fetch failed` 로 멈춘다. 실행기가 마카롱을 열기 전에 꺼져 있으면 `node tools/web/chrome_cdp.mjs launch` 로 띄운다. **새 컴퓨터는 처음 한 번 사람이 그 창에서 stove·마카롱에 로그인한다**(SETUP.md 5장, 로그인은 `workspace/chrome-profile` 에 남는다). 확인: `python3 tools/doctor.py --web`
-- 키트 Chrome 하나를 모든 기기가 같이 쓴다. 마카롱 단계는 이 컴퓨터에서 한 번에 한 실행만 들어간다(`workspace/macaron.lock` 파일 잠금) — 두 기기를 같이 돌리면 늦게 온 쪽이 「다른 기기가 마카롱을 쓰는 중」을 남기고 기다린다
+- 마카롱 문서를 지우거나 새로 만들지 않는다. 도구(`macaron_api.py`)에도 그 기능이 없다
+- 마카롱 단계는 브라우저 없이 dev 마카롱 API(`tools/macaron_api.py`)를 부른다. 값 하나를 바꾸고 다시 읽어 확인하는 데 3~7초 걸린다(2026-11-12 gb-qa-126 실측)
+- 여러 기기를 동시에 돌려도 된다. 같은 계정 문서를 동시에 바꾸면 cas 가 늦은 쪽을 거부하고 도구가 다시 읽어 최대 3번 재시도한다. 앱이 그 사이 문서를 바꿔도 같다
+- 키트 Chrome(포트 9444)은 이제 타임머신(서버 시간)에만 쓴다. 꺼져 있으면 `node tools/web/chrome_cdp.mjs launch` 로 띄우고, 새 컴퓨터는 처음 한 번 사람이 그 창에서 stove 에 로그인한다(SETUP.md 5장). 확인: `python3 tools/doctor.py --web`
 
 - **기본 기능 결과 캡처는 `python3 tools/basic_sheet.py upload --run runs/<실행>` 으로 올린다**(Google Drive 데스크톱의 캡쳐 폴더로 복사 → Drive 가 올린 파일 id 를 `drive.json` 에). Drive 연결(MCP)의 `create_file` 에 이미지를 base64 글자로 직접 써서 올리지 않는다 — 깨진 그림이 올라간다. Drive 데스크톱이 없으면 INSTALL.md 2-1 을 사람에게 안내한다
 

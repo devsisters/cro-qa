@@ -63,18 +63,18 @@ def main():
             '' if devs else 'Android 기기에서 개발자 옵션 → USB 디버깅을 켜고, 연결 후 뜨는 「USB 디버깅 허용」을 누른다')
     else:
         add('adb (Android)', 'FAIL', '없음', 'brew install --cask android-platform-tools  (Homebrew 가 없으면 SETUP.md 2장)')
-    # 마카롱(계정 상태)·타임머신(서버 시간)용 — 없어도 화면 케이스는 돈다
+    # 타임머신(서버 시간)용 — 없어도 화면 케이스는 돈다. 마카롱(계정 상태)은 브라우저 없이 API 를 부른다
     node = shutil.which('node') or next((p for p in ('/opt/homebrew/bin/node', '/usr/local/bin/node') if os.path.exists(p)), None)
     if node:
         code, out, _ = run([node, '--version'])
         major = int(out.strip().lstrip('v').split('.')[0] or 0) if code == 0 else 0
-        add('Node.js (상태·시간 케이스)', 'OK' if major >= 22 else 'WARN', out.strip(),
+        add('Node.js (서버 시간 케이스)', 'OK' if major >= 22 else 'WARN', out.strip(),
             '' if major >= 22 else 'Node 22 이상이 필요하다: brew install node')
     else:
-        add('Node.js (상태·시간 케이스)', 'WARN', '없음', 'brew install node  — 상태·시간 케이스에만 필요')
+        add('Node.js (서버 시간 케이스)', 'WARN', '없음', 'brew install node  — 서버 시간 케이스에만 필요')
     chrome = '/Applications/Google Chrome.app'
-    add('Chrome (상태·시간 케이스)', 'OK' if os.path.isdir(chrome) else 'WARN', chrome if os.path.isdir(chrome) else '없음',
-        '' if os.path.isdir(chrome) else 'https://www.google.com/chrome 에서 설치 — 상태·시간 케이스에만 필요')
+    add('Chrome (서버 시간 케이스)', 'OK' if os.path.isdir(chrome) else 'WARN', chrome if os.path.isdir(chrome) else '없음',
+        '' if os.path.isdir(chrome) else 'https://www.google.com/chrome 에서 설치 — 서버 시간 케이스에만 필요')
     # 기본 기능 결과 캡처 — Google Drive 데스크톱의 캡쳐 폴더로 복사한다(basic_sheet.py upload). 팀원 모두 필요하다
     import basic_sheet
     cap = basic_sheet.capture_dir(basic_sheet.sheet_info())
@@ -84,7 +84,19 @@ def main():
         code, out, _ = run(['python3', os.path.join(HERE, 'timemachine.py'), 'get', os.environ.get('QA_SERVER', 'gb-qa-126')], timeout=60)
         ok = code == 0
         add('키트 Chrome 로그인(stove)', 'OK' if ok else 'FAIL', out.strip()[-160:],
-            '' if ok else 'node tools/web/chrome_cdp.mjs launch 로 띄운 창에서 stove·마카롱에 로그인한다(SETUP.md 6장)')
+            '' if ok else 'node tools/web/chrome_cdp.mjs launch 로 띄운 창에서 stove 에 로그인한다(SETUP.md 5장)')
+    if '--web' in sys.argv:
+        import macaron_api
+        server = os.environ.get('QA_SERVER', 'gb-qa-126')
+        try:
+            macaron_api.get(server, 'member:__doctor__')
+            ok, detail = True, '응답함'
+        except macaron_api.NotFound:
+            ok, detail = True, f'{server} 응답함(없는 키 조회 → 404)'
+        except Exception as e:  # noqa: BLE001 — 통신 실패는 점검 결과로 보여 준다
+            ok, detail = False, str(e)[-160:]
+        add('마카롱 API (계정 상태 케이스)', 'OK' if ok else 'FAIL', detail,
+            '' if ok else '사내망·VPN 연결을 확인한다. 서버 이름이 dev(gb-…)인지 본다')
     devices_path = os.path.join(HERE, 'device_flows', 'devices.json')
     if not os.path.exists(devices_path):
         add('devices.json', 'WARN', '없음', 'cp tools/device_flows/devices.example.json tools/device_flows/devices.json 후 기기 ID 를 넣는다')

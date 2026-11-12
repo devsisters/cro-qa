@@ -141,7 +141,7 @@ async function checkNode(table) {
   const r = await sh('node', ['--version']);
   const major = r.code === 0 ? Number((r.out.trim().replace(/^v/, '').split('.')[0]) || 0) : 0;
   return {
-    id: 'node', title: 'Node.js 22 이상', need: '선택 · 계정 상태·서버 시간 케이스', status: major >= 22 ? 'OK' : 'WARN',
+    id: 'node', title: 'Node.js 22 이상', need: '선택 · 서버 시간 케이스', status: major >= 22 ? 'OK' : 'WARN',
     detail: r.code === 0 ? r.out.trim() : '없음', fix: major >= 22 ? '' : '화면 확인·되감기만 돌리면 없어도 된다',
     actions: major >= 22 ? [] : act(table, r.code === 0 ? 'nodeUp' : 'node'),
   };
@@ -150,7 +150,7 @@ async function checkNode(table) {
 async function checkChrome(table) {
   const ok = fs.existsSync('/Applications/Google Chrome.app');
   return {
-    id: 'chrome', title: 'Google Chrome', need: '선택 · 계정 상태·서버 시간 케이스', status: ok ? 'OK' : 'WARN',
+    id: 'chrome', title: 'Google Chrome', need: '선택 · 서버 시간 케이스', status: ok ? 'OK' : 'WARN',
     detail: ok ? '설치됨' : '없음', fix: ok ? '' : '화면 확인·되감기만 돌리면 없어도 된다', actions: ok ? [] : act(table, 'chrome'),
   };
 }

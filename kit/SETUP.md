@@ -30,16 +30,15 @@
 - iOS Stage 빌드는 「기기」 탭 iOS 줄의 빌드를 「Stage (AdHoc)」로 고른다(CLI 는 `--bundle stage`). 인게임 자동 되감기는 DEBUG 빌드에만 있다
 - 빌드가 바뀌면 다시 설치하고 `PROMPTS.md` 4번(회귀)을 돌린다
 
-## 5. Chrome·Node — 계정 상태·서버 시간 케이스용
+## 5. Chrome·Node — 서버 시간 케이스용
 
-계정 상태를 바꾸는 케이스(마카롱)와 서버 시간을 바꾸는 케이스(타임머신)에만 필요하다. 화면 확인 케이스만 돌리면 건너뛴다.
+서버 시간을 바꾸는 케이스(타임머신)에만 필요하다. 계정 상태를 바꾸는 케이스(마카롱)는 브라우저 없이 API 를 부르므로 이 준비가 필요 없다. 화면 확인 케이스만 돌리면 건너뛴다.
 
 1. Chrome 설치(https://www.google.com/chrome), `brew install node`(22 이상)
 2. 키트 전용 Chrome 창 띄우기: `node tools/web/chrome_cdp.mjs launch`
    - 평소 쓰는 Chrome 과 따로 노는 창이다(프로필 `workspace/chrome-profile`). 로그인·쿠키가 섞이지 않는다
 3. 그 창에서 **사람이 한 번** 로그인한다
    - https://stove.devspie.com/app/timemachine/get?name=<서버> → 「데브시스터즈 직원 로그인」
-   - https://macaron.<서버>.stove.devspie.com/couchbase_modifier/ → 인증서 경고가 뜨면 [고급] → [계속]
 4. `python3 tools/doctor.py --web` 이 OK
 5. 다 쓰면 그 창을 닫는다(열려 있는 동안 디버깅 포트가 열려 있다)
 

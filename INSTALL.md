@@ -115,11 +115,13 @@ cd kit && python3 tools/doctor.py; echo "exit $?"
 ```
 
 - exit 0 이고 FAIL 줄이 없으면 통과다. 각 FAIL·WARN 줄 아래의 「→」 줄이 해결 방법이다. 사람이 할 일이면 그 줄을 그대로 전한다.
-- WARN 중 Node.js·Chrome 은 계정 상태·서버 시간 케이스용이라 없어도 되감기·화면 테스트는 돈다. Chrome 로그인(`SETUP.md` 5장)은 그 케이스를 쓸 때 사람이 한다.
+- WARN 중 Node.js·Chrome 은 서버 시간 케이스용이라 없어도 되감기·화면 테스트는 돈다. Chrome 로그인(`SETUP.md` 5장)은 그 케이스를 쓸 때 사람이 한다.
 
-### 8-1. 키트 Chrome 로그인 — 사람(계정 상태·서버 시간 케이스를 쓸 때)
+### 8-1. 키트 Chrome 로그인 — 사람(서버 시간 케이스를 쓸 때)
 
-기본 기능·쿠키 인벤토리 같은 시나리오는 마카롱으로 계정 상태를 바꾼다. 이 컴퓨터에서 처음이면 **사람**: `node kit/tools/web/chrome_cdp.mjs launch` 로 뜬 창에서 stove·마카롱에 로그인하고 인증서 경고(고급 → 계속)를 넘긴다(`kit/SETUP.md` 5장). 로그인은 `kit/workspace/chrome-profile` 에 남아 다음부터는 실행기가 창을 스스로 띄운다. 확인: `cd kit && python3 tools/doctor.py --web`. 안 하면 실행이 `BRIDGE at macaron open … fetch failed` 로 멈춘다.
+서버 시간을 바꾸는 케이스는 키트 Chrome 으로 타임머신을 부른다. 이 컴퓨터에서 처음이면 **사람**: `node kit/tools/web/chrome_cdp.mjs launch` 로 뜬 창에서 stove 에 로그인한다(`kit/SETUP.md` 5장). 로그인은 `kit/workspace/chrome-profile` 에 남아 다음부터는 실행기가 창을 스스로 띄운다. 확인: `cd kit && python3 tools/doctor.py --web`.
+
+마카롱으로 계정 상태를 바꾸는 케이스(기본 기능·쿠키 인벤토리 등)는 브라우저 없이 dev 마카롱 API 를 부르므로 로그인이 필요 없다.
 
 ## 9. 게임 설치 — 사람
 
