@@ -25,7 +25,7 @@ python3 device_flows/run_flow.py mycookie_icing_gacha --platform mac|ios|aos --c
 
 - `--relaunch`: 앱을 새로 띄워 같은 시작 상태에서 돈다. 안 주면 지금 화면에서 시작한다
 - `--no-pull`: 재화를 쓰는 단계를 건너뛴다(QA 계정 재화가 줄어든다)
-- `--states`: 마카롱으로 계정 상태를 바꿔 보는 단계를 켠다(예: 재화 부족). Aside 가 CDP 로 떠 있고 마카롱에 로그인돼 있어야 한다. 바꾼 값은 `routes.refresh_user_info`(디버그 콘솔 「유저 정보 갱신」)로 앱에 반영하고, 끝나면 원래 값으로 되돌린다
+- `--states`: 마카롱으로 계정 상태를 바꿔 보는 단계를 켠다(예: 재화 부족). 마카롱은 브라우저 없이 dev 마카롱 API 로 바꾼다(`../macaron_edit.py`, 로그인 없음). 바꾼 값은 `routes.refresh_user_info`(디버그 콘솔 「유저 정보 갱신」)로 앱에 반영하고, 끝나면 원래 값으로 되돌린다
 - 결과: `<wt>/.gb-agent/runs/device-flows/<flow>-<platform>-<시각>/report.json` 과 단계별 캡처
 
 exit: 0 전 단계 통과 · 1 확인 실패(화면은 갔는데 기대값이 다름) · 2 사용법 · 3 흐름 실패
