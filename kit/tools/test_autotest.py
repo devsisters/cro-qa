@@ -372,6 +372,82 @@ class TestStateAndTime(Base):
         self.assertEqual([c[0] for c in calls[calls_before:]], ['get', 'set', 'refresh', 'get', 'refresh'])
 
 
+class TestAutoplay(Base):
+    """기본 기능 실행 — 인게임에 들어가면 자동 달리기(피하기·구멍 구출·이어달리기)로 끝까지 달린다"""
+
+    def bridge(self, events, enabled=False):
+        sent = []
+        st = {'enabled': enabled, 'input': enabled, 'inGame': False, 'lastEvent': 3}
+        queue = [list(events)]
+
+        def call(*args):
+            if args[0] == 'autorewind':
+                f = json.loads(args[2])
+                sent.append(f)
+                if f['op'] == 'status':
+                    return {'ok': True, 'result': dict(st)}
+                if f['op'] == 'set':
+                    st.update(enabled=True, input=True)
+                    return {'ok': True, 'result': {}}
+                if f['op'] == 'events':
+                    batch = queue.pop(0) if queue else []
+                    return {'ok': True, 'result': {'events': batch, 'next': f['since'] + len(batch)}}
+                return {'ok': True, 'result': {}}
+            return FakeBridge(self.png, {'SceneNavigator': LOBBY_NODES})(*args)
+        return call, sent
+
+    def suite(self, autoplay=True):
+        s = {'suite': 'basic', 'cases': [{'id': 'TC-005', 'auto': True, 'start': 'here', 'steps': [
+            {'do': 'play', 'timeout': 30}, {'do': 'checkpoint', 'name': 'result', 'settle': 0, 'image': False}]}]}
+        if autoplay:
+            s['autoplay'] = {'mode': 'smart', 'rescue': True, 'relay': True, 'mistakeRatio': 0}
+        return s
+
+    def test_validate_needs_autoplay(self):
+        self.assertIn('autoplay', '\n'.join(case_runner.validate(self.suite(autoplay=False))))
+        self.assertEqual(case_runner.validate(self.suite()), [])
+
+    def test_basic_suite_carries_preset(self):
+        import basic_scenario
+        play = qc.load_json(os.path.join(qc.KIT, 'presets', 'basic-play.json'))['input']
+        self.assertEqual(basic_scenario.build_suite([])['autoplay'], play)
+        self.assertEqual((play['mode'], play['rescue'], play['relay']), ('smart', True, True))
+
+    def test_play_runs_to_result(self):
+        evs = [{'type': 'game_start', 't': 0}, {'type': 'rescue_click', 't': 20}, {'type': 'relay_click', 't': 40},
+               {'type': 'rewind_skip', 'reason': 'online_sync', 't': 0}, {'type': 'game_over', 't': 61.24, 'jelly': '900'},
+               {'type': 'result_screen', 'scene': 'SceneResult', 't': 61.3}]
+        call, sent = self.bridge(evs)
+        out = os.path.join(qc.RUNS, 'basic-play')
+        with mock.patch.object(case_runner, 'PLAY_POLL', 0.01):
+            res = self.runner(call, self.suite(), out).run_case(self.suite()['cases'][0])
+        self.assertIsNone(res['error'])
+        self.assertEqual(res['autoplay'], 'on')
+        sets = [f for f in sent if f['op'] == 'set']
+        self.assertEqual(len(sets), 1)   # 케이스 시작 때 한 번 켜고, play 단계는 켜진 것을 확인만 한다
+        self.assertEqual((sets[0]['triggers'], sets[0]['infiniteRewind'], sets[0]['input']['mode']), ([], False, 'smart'))
+        p = res['plays'][0]
+        self.assertEqual((p['end'], p['playSec'], p['rescue'], p['relay'], p['result'], p['skips']),
+                         ('game_over', 61.2, 1, 1, 'SceneResult', ['online_sync']))
+        self.assertFalse(p['stoppedByLimit'])
+
+    def test_already_on_is_not_reset(self):
+        call, sent = self.bridge([], enabled=True)
+        suite = self.suite()
+        suite['cases'][0]['steps'] = [{'do': 'checkpoint', 'name': 'x', 'settle': 0, 'image': False}]
+        res = self.runner(call, suite, os.path.join(qc.RUNS, 'basic-on')).run_case(suite['cases'][0])
+        self.assertEqual(res['autoplay'], 'on')
+        self.assertFalse([f for f in sent if f['op'] == 'set'])
+
+    def test_play_fails_when_game_never_starts(self):
+        call, _ = self.bridge([])
+        suite = self.suite()
+        suite['cases'][0]['steps'][0]['start_timeout'] = 0.05
+        with mock.patch.object(case_runner, 'PLAY_POLL', 0.01):
+            res = self.runner(call, suite, os.path.join(qc.RUNS, 'basic-nostart')).run_case(suite['cases'][0])
+        self.assertEqual((res['verdict'], res['error']['kind']), ('ERROR', 'NOT_REACHED'))
+
+
 class TestSheetImport(unittest.TestCase):
     def test_convert(self):
         csv_text = ('QA 시트,,,,,,\n'

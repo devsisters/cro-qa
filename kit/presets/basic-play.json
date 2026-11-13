@@ -1,0 +1,9 @@
+{
+ "_doc": "기본 기능 실행(basic_run)이 인게임에 들어가면 이 방식으로 자동으로 달린다 — 게임 AutoRewind 의 input. 되감기는 하지 않는다. smart: 앞의 장애물·구멍을 보고 점프·슬라이드, rescue: 구멍 구출 버튼, relay: 첫 쿠키가 쓰러지면 이어달리기, mistakeRatio 0: 일부러 놓치지 않는다",
+ "input": {
+  "mode": "smart",
+  "rescue": true,
+  "relay": true,
+  "mistakeRatio": 0
+ }
+}

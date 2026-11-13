@@ -117,6 +117,10 @@ def build_suite(files, tcs=None):
         server = server or data.get('server', '')
         time_ok = time_ok or bool(data.get('time_ok'))
     suite = {'suite': 'basic', 'kind': 'outgame', 'cases': cases}
+    # 인게임에 들어가면 자동으로 달린다(장애물 피하기 · 구멍 구출 · 이어달리기) — kit/presets/basic-play.json
+    play = os.path.join(qc.KIT, 'presets', 'basic-play.json')
+    if os.path.exists(play):
+        suite['autoplay'] = qc.load_json(play).get('input') or {}
     if server:
         suite['server'] = server
     if time_ok:

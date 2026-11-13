@@ -57,6 +57,7 @@
 | `state` | `path`, `value` 또는 `op: "remove"`, `restore`?(기본 false), `refresh`?(기본 true), `max_refs`? | 마카롱으로 계정 필드를 바꾸거나(`value`) 배열 항목을 뺀다(`op: remove`, 경로에 `@id=N` 으로 항목 지정). 「유저 정보 갱신」으로 반영. 이미 그 상태면 저장하지 않는다. 되돌리지 않는 것이 기본. `max_refs`: 항목 id 가 문서에 그보다 많이 나오면(장착 등) 빼지 않는다. 파일 머리 `server` 필요 |
 | `scroll_find` | `select`, `max`?(기본 40), `band`?, `list`?, `page`?(기본 0.8), `swipe`? | 목록에서 대상이 화면 안(band 높이 범위)에 나올 때까지 찾는다. 게임 브리지의 `scroll` 로 목록 처음부터 한 쪽(`page` × 보이는 높이)씩 관성 없이 넘기고, 찾으면 띠 가운데로 옮긴다. 끝에 닿으면 바로 실패한다. `list`: 이 이름의 노드가 든 목록(없으면 화면에서 가장 넓은 목록). 브리지에 `scroll` 이 없는 예전 빌드면 `swipe` 로 손가락처럼 넘긴다 |
 | `server_time` | `to`(`"+1d"`·`"+2h30m"`·`"2026-11-14 00:00"`), `relaunch`?(기본 true) | 서버 시간 변경 후 앱 재시작·로비. 파일 머리 `time_ok: true` + 실행기 `--allow-time` 일 때만 돈다 |
+| `play` | `timeout`?(달린 시간, 기본 600초), `start_timeout`?(기본 180초) | 인게임 한 판을 자동 달리기로 끝까지 달린다. 인게임 진입(시작 버튼 누르기)은 앞 단계가 한다. 시작을 기다린 뒤 결과 화면(`Result` 가 든 화면)이 나올 때까지 게임 AutoRewind 이벤트를 모으고, `timeout` 을 넘으면 그만두기로 끝낸다. 결과의 `plays` 에 끝난 방식·달린 초·젤리·부활·구멍 구출·이어달리기 횟수가 남는다. 파일 머리 `autoplay`(자동 달리기 input) 필요 — 기본 기능 실행기는 `presets/basic-play.json` 을 넣는다 |
 
 모든 단계에 `label`(로그에 쓸 이름), `after`(단계 뒤 기다릴 초)를 붙일 수 있다. `timeout` 기본 15초.
 

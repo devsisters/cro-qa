@@ -42,7 +42,11 @@ STEP_KEYS = {
     'tap': ('target',), 'tap_select': ('select',), 'tap_xy': ('x', 'y'), 'swipe': (), 'wait_scene': ('scene',),
     'wait': ('select',), 'wait_gone': ('select',), 'sleep': ('s',), 'close_popup': (), 'route': ('name',),
     'checkpoint': ('name',), 'back': (), 'state': ('path',), 'server_time': ('to',), 'scroll_find': ('select',),
+    'play': (),
 }
+PLAY_START_WAIT = 180   # play 단계 — 인게임이 시작되기를 기다리는 최대 시간(로딩 포함)
+PLAY_POLL = 2.0
+PLAY_END_EVENTS = ('game_over', 'timeout_stop', 'crash_stop')
 ROUTES = ('to_lobby', 'back_to_lobby', 'lobby_to_gacha', 'refresh_user_info')
 START = ('relaunch', 'lobby', 'here')
 
@@ -186,6 +190,10 @@ def validate(suite):
                 errs.append(f'{where} step {i} ({do}): 케이스 파일 머리에 server(예: gb-qa-126)가 필요')
             if do == 'server_time' and not suite.get('time_ok'):
                 errs.append(f'{where} step {i}: 서버 시간을 바꾸는 케이스 — 케이스 파일 머리에 time_ok: true (서버를 같이 쓰는 사람과 합의한 뒤)')
+            if do == 'play' and not suite.get('autoplay'):
+                errs.append(f'{where} step {i} (play): 케이스 파일 머리에 autoplay(자동 달리기 input)가 필요 — 기본 기능은 kit/presets/basic-play.json')
+            if do == 'play' and not isinstance(s.get('timeout', 600), (int, float)):
+                errs.append(f'{where} step {i} (play): timeout 은 초(숫자)')
             if do == 'route' and s.get('name') not in ROUTES:
                 errs.append(f'{where} step {i}: route 는 {ROUTES}')
             if do == 'checkpoint':
@@ -250,6 +258,8 @@ class Runner:
         self.suite_name = suite.get('suite') or 'suite'
         self.allow_time = False
         self.restores = []
+        # 인게임 자동 달리기 설정(게임 AutoRewind 의 input). 있으면 케이스마다 켜 두어 인게임에 들어가는 순간 그 방식으로 달린다
+        self.autoplay = suite.get('autoplay')
 
     def nodes(self, tree=None):
         return qc.visible(tree if tree is not None else self.dev.tree())
@@ -287,6 +297,8 @@ class Runner:
                     routes.back_to_lobby(self.dev)
                 except FlowFailure:
                     routes.to_lobby(self.dev, self.suite.get('preset'), timeout=120)
+            if self.autoplay:
+                res['autoplay'] = self.arm_autoplay()
             for i, step in enumerate(case.get('steps', [])):
                 current = i
                 self.step(case, i, step, res)
@@ -487,6 +499,8 @@ class Runner:
                     raise FlowFailure('BRIDGE', label, r.get('error'))
                 dev.wait(lambda: dev.call('ping').get('ok'), 90, label, '브리지 응답')
                 routes.to_lobby(dev, self.suite.get('preset'))
+        elif do == 'play':
+            self.play(s, label, res)
         elif do == 'checkpoint':
             if s.get('device'):
                 ok, why = device_match(s['device'], self.platform, getattr(self, 'device_info', {}) or {})
@@ -500,6 +514,78 @@ class Runner:
             res['checkpoints'].append(self.checkpoint(case, s, tree))
         if s.get('after'):
             time.sleep(float(s['after']))
+
+    # --- 인게임 자동 달리기 ---
+    def bridge(self, cmd, **fields):
+        return self.dev.call(cmd, '--json', json.dumps(fields))
+
+    def arm_autoplay(self):
+        """게임 AutoRewind 에 자동 달리기를 켜 둔다 — 되감기 트리거 없이 입력(피하기·구멍 구출·이어달리기)만.
+        이미 켜져 있으면 다시 보내지 않는다(달리는 중에 다시 보내면 그 판의 배운 값이 초기화된다).
+        자동 되감기 모듈이 없는 빌드면 켜지 못한 이유를 돌려주고 케이스는 계속 돈다."""
+        r = self.bridge('autorewind', op='status')
+        st = r.get('result') or {}
+        if r.get('ok') and st.get('enabled') and st.get('input'):
+            return 'on'
+        fields = {'triggers': [], 'infiniteRewind': False,
+                  'input': dict(self.autoplay, seed=int(self.autoplay.get('seed') or time.time()) % 1000000007)}
+        r = self.bridge('autorewind', op='set', **fields)
+        return 'on' if r.get('ok') else f'켜지 못함: {r.get("error")}'
+
+    def play(self, s, label, res):
+        """인게임 한 판을 자동 달리기로 끝까지 달린다. 인게임 진입은 앞 단계가 하고, 이 단계는 시작을 기다린 뒤
+        판이 끝나 결과 화면이 나올 때까지 이벤트를 모은다. timeout(달린 시간, 기본 600초)을 넘으면 그만두기로 끝낸다."""
+        from flowlib import FlowFailure
+        if not self.autoplay:
+            raise FlowFailure('RUNNER', label, '자동 달리기 설정(suite autoplay)이 없다 — 기본 기능 실행기(basic_run)로 돌린다')
+        armed = self.arm_autoplay()
+        if armed != 'on':
+            raise FlowFailure('BRIDGE', label, f'자동 달리기를 {armed}')
+        limit = float(s.get('timeout', 600))
+        st = (self.bridge('autorewind', op='status').get('result') or {})
+        since = int(st.get('lastEvent') or 0)
+        events, started, run_deadline, ended_at, quit_at, misses = [], bool(st.get('inGame')), None, None, None, 0
+        start_wait = float(s.get('start_timeout', PLAY_START_WAIT))
+        start_deadline = time.time() + start_wait
+        if started:
+            run_deadline = time.time() + limit
+        while True:
+            now = time.time()
+            if not started and now > start_deadline:
+                raise FlowFailure('NOT_REACHED', label, f'{int(start_wait)}s 안에 인게임이 시작되지 않았다 (scene={self.dev.scene()})')
+            if run_deadline and now > run_deadline and quit_at is None and ended_at is None:
+                quit_at = now
+                self.bridge('autorewind', op='quit')
+            if quit_at and ended_at is None and now - quit_at > 90:
+                raise FlowFailure('NOT_REACHED', label, f'제한 {int(limit)}초 뒤 그만두기를 보냈지만 판이 끝나지 않았다 (scene={self.dev.scene()})')
+            if ended_at and now - ended_at > 90:
+                raise FlowFailure('NOT_REACHED', label, f'판이 끝났지만 90초 안에 결과 화면이 나오지 않았다 (scene={self.dev.scene()})')
+            r = self.bridge('autorewind', op='events', since=since)
+            if not r.get('ok'):
+                misses += 1
+                if misses >= 5 and not self.dev.call('ping').get('ok'):
+                    raise FlowFailure('BRIDGE', label, '판 도중 앱이 응답하지 않는다(종료 의심)')
+                time.sleep(PLAY_POLL)
+                continue
+            misses = 0
+            for e in r['result'].get('events') or []:
+                events.append(e)
+                if e['type'] == 'game_start' and not started:
+                    started, run_deadline = True, time.time() + limit
+                if e['type'] in PLAY_END_EVENTS and ended_at is None:
+                    ended_at = time.time()
+            since = r['result'].get('next', since)
+            if any(e['type'] == 'result_screen' for e in events):
+                break
+            time.sleep(PLAY_POLL)
+        types = [e['type'] for e in events]
+        over = next((e for e in events if e['type'] in PLAY_END_EVENTS), {})
+        res.setdefault('plays', []).append({
+            'label': label, 'end': over.get('type', ''), 'playSec': round(float(over.get('t') or 0), 1), 'jelly': over.get('jelly'),
+            'revive': types.count('revive'), 'rescue': types.count('rescue_click'), 'relay': types.count('relay_click'),
+            'bonus': types.count('bonus_enter'), 'stoppedByLimit': quit_at is not None,
+            'result': next((e.get('scene') for e in events if e['type'] == 'result_screen'), ''),
+            'skips': sorted({e.get('reason', '') for e in events if e['type'] == 'rewind_skip'} - {''})})
 
     def mid(self):
         """디버그 빌드 화면의 「MID : …」 라벨에서 계정 MID 를 읽는다."""
