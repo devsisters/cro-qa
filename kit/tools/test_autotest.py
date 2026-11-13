@@ -427,8 +427,27 @@ class TestAutoplay(Base):
         self.assertEqual(len(sets), 1)   # 케이스 시작 때 한 번 켜고, play 단계는 켜진 것을 확인만 한다
         self.assertEqual((sets[0]['triggers'], sets[0]['infiniteRewind'], sets[0]['input']['mode']), ([], False, 'smart'))
         p = res['plays'][0]
-        self.assertEqual((p['end'], p['playSec'], p['rescue'], p['relay'], p['result'], p['skips']),
-                         ('game_over', 61.2, 1, 1, 'SceneResult', ['online_sync']))
+        self.assertEqual((p['runners'], p['runs'][0]['end'], p['playSec'], p['rescue'], p['relay'], p['result'], p['skips']),
+                         (1, 'game_over', 61.2, 1, 1, 'SceneResult', ['online_sync']))
+
+    def test_relay_mode_waits_for_last_runner(self):
+        # 릴레이 모드 — 주자마다 game_over 가 오고, 마지막 주자 뒤에 결과 화면이 나온다(2026-11-13 Android 실측 순서)
+        batches = [[{'type': 'game_start', 't': 0}, {'type': 'crash', 't': 16}, {'type': 'game_over', 't': 42.3, 'jelly': '1695'}],
+                   [], [{'type': 'game_start', 't': 0}, {'type': 'game_over', 't': 41.8, 'jelly': '411'}],
+                   [{'type': 'game_start', 't': 0}, {'type': 'game_over', 't': 30.0, 'jelly': '850'},
+                    {'type': 'result_screen', 'scene': 'SceneResultRelayTrainingMode', 't': 30.0}]]
+        call, _ = self.bridge([])
+        def relay(*args):
+            if args[0] == 'autorewind' and json.loads(args[2])['op'] == 'events':
+                f = json.loads(args[2])
+                b = batches.pop(0) if batches else []
+                return {'ok': True, 'result': {'events': b, 'next': f['since'] + len(b)}}
+            return call(*args)
+        with mock.patch.object(case_runner, 'PLAY_POLL', 0.01):
+            res = self.runner(relay, self.suite(), os.path.join(qc.RUNS, 'basic-relay')).run_case(self.suite()['cases'][0])
+        self.assertIsNone(res['error'])
+        p = res['plays'][0]
+        self.assertEqual((p['runners'], p['playSec'], p['crash'], p['result']), (3, 114.1, 1, 'SceneResultRelayTrainingMode'))
         self.assertFalse(p['stoppedByLimit'])
 
     def test_already_on_is_not_reset(self):

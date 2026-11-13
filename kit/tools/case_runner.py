@@ -534,7 +534,8 @@ class Runner:
 
     def play(self, s, label, res):
         """인게임 한 판을 자동 달리기로 끝까지 달린다. 인게임 진입은 앞 단계가 하고, 이 단계는 시작을 기다린 뒤
-        판이 끝나 결과 화면이 나올 때까지 이벤트를 모은다. timeout(달린 시간, 기본 600초)을 넘으면 그만두기로 끝낸다."""
+        판이 끝나 결과 화면이 나올 때까지 이벤트를 모은다. 주자가 여럿인 모드(릴레이 등)는 주자마다 game_start·game_over 가
+        오고 마지막 주자 뒤에 결과 화면이 나온다. timeout(주자 한 명이 달린 시간, 기본 600초)을 넘으면 그만두기로 끝낸다."""
         from flowlib import FlowFailure
         if not self.autoplay:
             raise FlowFailure('RUNNER', label, '자동 달리기 설정(suite autoplay)이 없다 — 기본 기능 실행기(basic_run)로 돌린다')
@@ -570,8 +571,9 @@ class Runner:
             misses = 0
             for e in r['result'].get('events') or []:
                 events.append(e)
-                if e['type'] == 'game_start' and not started:
-                    started, run_deadline = True, time.time() + limit
+                if e['type'] == 'game_start':
+                    # 다음 주자가 이어 달린다 — 앞 주자의 game_over 로 판이 끝났다고 보지 않는다
+                    started, run_deadline, ended_at, quit_at = True, time.time() + limit, None, None
                 if e['type'] in PLAY_END_EVENTS and ended_at is None:
                     ended_at = time.time()
             since = r['result'].get('next', since)
@@ -579,10 +581,10 @@ class Runner:
                 break
             time.sleep(PLAY_POLL)
         types = [e['type'] for e in events]
-        over = next((e for e in events if e['type'] in PLAY_END_EVENTS), {})
+        runs = [{'end': e['type'], 'sec': round(float(e.get('t') or 0), 1), 'jelly': e.get('jelly')} for e in events if e['type'] in PLAY_END_EVENTS]
         res.setdefault('plays', []).append({
-            'label': label, 'end': over.get('type', ''), 'playSec': round(float(over.get('t') or 0), 1), 'jelly': over.get('jelly'),
-            'revive': types.count('revive'), 'rescue': types.count('rescue_click'), 'relay': types.count('relay_click'),
+            'label': label, 'runners': len(runs), 'runs': runs, 'playSec': round(sum(r['sec'] for r in runs), 1),
+            'crash': types.count('crash'), 'revive': types.count('revive'), 'rescue': types.count('rescue_click'), 'relay': types.count('relay_click'),
             'bonus': types.count('bonus_enter'), 'stoppedByLimit': quit_at is not None,
             'result': next((e.get('scene') for e in events if e['type'] == 'result_screen'), ''),
             'skips': sorted({e.get('reason', '') for e in events if e['type'] == 'rewind_skip'} - {''})})
