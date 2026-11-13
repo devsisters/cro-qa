@@ -1628,7 +1628,12 @@ function setChatBusy(busy) {
   $('#chatStop').hidden = !busy;
 }
 $$('#chatStarters button').forEach((b) => b.addEventListener('click', () => { $('#chatInput').value = b.dataset.prompt; $('#chatInput').focus(); }));
-$('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) $('#chatSend').click(); });
+// Enter 로 보낸다. Shift+Enter 는 줄바꿈이고, 한글을 조합하는 중의 Enter(글자 확정)는 보내지 않는다. 답을 받는 중(보내기 버튼이 숨겨진 때)에는 보내지 않는다
+$('#chatInput').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || e.shiftKey) return;
+  e.preventDefault();
+  if (!$('#chatSend').hidden) $('#chatSend').click();
+});
 $('#chatStop').addEventListener('click', () => qa.claudeStop(state.chatId));
 $('#chatNew').addEventListener('click', () => {
   state.chatSession = null;
